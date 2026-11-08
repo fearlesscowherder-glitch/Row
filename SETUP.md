@@ -99,6 +99,22 @@ Needs [Node.js](https://nodejs.org) 20.12 or newer.
 
 While it runs it imports Schoology exports from Downloads and scans Gmail every 15 minutes (`SYNC_MINUTES` changes that), even with no page open. Close the terminal and it stops. If you set up Supabase, data lives there instead, and a Vercel deployment would see the same lists, notes and assignments. Back up the `data` folder if you don't use Supabase.
 
+### Start automatically with Windows
+
+A Task Scheduler task named **Row Dashboard** runs `toolsstart-hidden.vbs` at logon. That starts `toolsun-forever.cmd` with no window, which runs the server and restarts it 15 seconds after it stops for any reason. Output goes to `logsserver.log`.
+
+To set it up on another PC, run this in PowerShell from the `Row` folder:
+
+```powershell
+$root = (Get-Location).Path
+Register-ScheduledTask -TaskName "Row Dashboard" -Action (New-ScheduledTaskAction -Execute wscript.exe -Argument "`"$root	oolsstart-hidden.vbs`"" -WorkingDirectory $root) -Trigger (New-ScheduledTaskTrigger -AtLogOn -User "$env:USERDOMAIN$env:USERNAME") -Settings (New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit 0 -MultipleInstances IgnoreNew)
+Start-ScheduledTask "Row Dashboard"
+```
+
+- **Restart it** (after editing `.env`): in Task Manager, end the `node.exe` whose command line is `server.mjs`. It comes back within 15 seconds with the new settings.
+- **Turn it off for good**: `Unregister-ScheduledTask "Row Dashboard"`, then end that `node.exe` and the `cmd.exe` running `run-forever.cmd`.
+- While it's running, `npm start` will say the port is in use. That's expected.
+
 To open it from your phone on the same Wi-Fi, add `HOST=0.0.0.0` to `.env` and visit `http://YOUR-PC-IP:3210`. 
 
 ## Troubleshooting

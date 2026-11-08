@@ -12,3 +12,6 @@ node_modules/
 
 # Local app data (when running without Supabase)
 data/
+
+# Server log (autostart)
+logs/
