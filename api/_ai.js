@@ -91,7 +91,10 @@ async function postChat(body) {
 }
 
 async function askGateway({ system, content, schema, maxTokens = 8000 }) {
-  const model = process.env.AI_MODEL || 'auto';
+  // Requests with a picture go to AI_VISION_MODEL when set (many fast text
+  // models can't see images).
+  const hasImage = Array.isArray(content) && content.some(b => b.type === 'image');
+  const model = (hasImage && process.env.AI_VISION_MODEL) || process.env.AI_MODEL || 'auto';
   const sys = system + '\n\nReply with only a JSON object (no prose, no code fences) matching this JSON Schema:\n' + JSON.stringify(schema);
   const base = {
     model,

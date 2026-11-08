@@ -46,7 +46,7 @@ Schoology's file doesn't say which class each item belongs to, so the AI sorts r
 1. Start OmniRoute and open its dashboard (normally [localhost:20128](http://localhost:20128)). Connect the providers you want to use.
 2. Under **Endpoints / API Keys**, create a key. Put it in `AI_API_KEY`.
 3. Set `AI_BASE_URL=http://localhost:20128/v1`.
-4. Set `AI_MODEL` to a model or combo name OmniRoute lists (`auto` lets OmniRoute pick). For tagging Mind images, pick a model that can see images.
+4. Set `AI_MODEL` to a fast model OmniRoute lists, e.g. `groq/openai/gpt-oss-120b` (answers in about a second; `auto` may pick a slow "thinking" model that times out). Set `AI_VISION_MODEL` to one that can see images, e.g. `nvidia/nvidia/nemotron-3.5-super-vl-120b-a12b`, for tagging pictures in Mind.
 
 Check it works: `curl http://localhost:20128/v1/models -H "Authorization: Bearer YOUR_KEY"` should list models.
 

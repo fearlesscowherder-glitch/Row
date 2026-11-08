@@ -178,7 +178,9 @@ const EVENT_SCHEMA = {
 
 const SYSTEM = `You turn a student's emails into calendar entries.
 Add an entry only for something with a specific date that the student would attend or must meet: classes, meetings, practices, games, rehearsals, appointments, tests, assignment or application deadlines, school events, flights, reservations, parties.
-Skip marketing and sales ("offer ends Sunday"), newsletters, receipts and shipping updates, reminders about events that have already passed, and anything without a clear date.
+Only add events that are the student's own: sent by a person or group they belong to (teachers, coaches, school, clubs, team, family, friends, employer), or something they registered for, booked or were personally scheduled for (confirmations, interviews, appointments, tickets).
+Skip mass-mailed invitations to things the student hasn't signed up for, even if the email uses their name: college admissions marketing (open houses, webinars, info sessions, campus visits), company promos and sales ("offer ends Sunday"), newsletters, and event listings. Also skip receipts and shipping updates, events that have already passed, and anything without a clear date.
+When unsure whether something is personal or marketing, leave it out.
 Resolve relative dates ("this Friday", "tomorrow") against the email's sent date. Times are in the student's local time zone. One email can produce several entries, or none.`;
 
 export async function runGmailSync({ force = false } = {}) {
@@ -214,26 +216,37 @@ export async function runGmailSync({ force = false } = {}) {
     emails = await apiEmails(token, q, seen);
   }
 
-  let added = 0;
+  let added = 0, scanned = 0, lastError = '';
   if (emails.length) {
 
     const settings = (await getRow(PREFIX + 'settings')) || {};
     const tz = settings.timezone || process.env.TZ_NAME || 'America/New_York';
     const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz, dateStyle: 'short' }).format(new Date());
 
-    const content = `Today is ${today} (time zone ${tz}).\n\n` + emails.map((e, i) =>
-      `<email index="${i}">\nFrom: ${e.from}\nSent: ${e.sent}\nSubject: ${e.subject}\n\n${e.text}\n</email>`
-    ).join('\n\n');
-
-    const result = await askJson({ system: SYSTEM, content, schema: EVENT_SCHEMA });
-
     const store = (await getRow(EVENTS_KEY)) || { events: [] };
     const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
     const keep = store.events.filter(ev => ev.start.slice(0, 10) >= cutoff);
     const existing = new Set(keep.map(ev => ev.id));
 
+    // A few emails per request keeps each one fast enough for smaller models;
+    // progress is saved after every batch.
+    const BATCH = 5;
+    for (let b = 0; b < emails.length; b += BATCH) {
+    const group = emails.slice(b, b + BATCH);
+    const content = `Today is ${today} (time zone ${tz}).\n\n` + group.map((e, i) =>
+      `<email index="${i}">\nFrom: ${e.from}\nSent: ${e.sent}\nSubject: ${e.subject}\n\n${e.text.slice(0, 3000)}\n</email>`
+    ).join('\n\n');
+
+    let result;
+    try {
+      result = await askJson({ system: SYSTEM, content, schema: EVENT_SCHEMA, maxTokens: 4000 });
+    } catch (e) {
+      lastError = e.message;
+      break; // try the rest next time
+    }
+
     result.events.forEach((ev, n) => {
-      const src = emails[ev.email_index];
+      const src = group[ev.email_index];
       if (!src || !/^\d{4}-\d{2}-\d{2}$/.test(ev.date)) return;
       const id = 'gm_' + src.id + '_' + n;
       if (existing.has(id)) return;
@@ -255,11 +268,13 @@ export async function runGmailSync({ force = false } = {}) {
     });
 
     await setRow(EVENTS_KEY, { events: keep.slice(-500) });
-    emails.forEach(m => seen.add(m.id));
+    group.forEach(m => seen.add(m.id));
+    scanned += group.length;
     await setRow(SEEN_KEY, { ids: Array.from(seen).slice(-1500) });
+    }
   }
 
-  const s = { lastRun: new Date().toISOString(), lastError: '', scanned: emails.length, added };
+  const s = { lastRun: new Date().toISOString(), lastError, scanned, added };
   await setRow(STATUS_KEY, s);
   return Object.assign({ connected: true }, s);
 }
