@@ -12,7 +12,7 @@ Plan on about 30 minutes, once. You'll collect these values. For Vercel paste th
 | `APP_PASSWORD` | Any password you make up. The site is public, so this is what keeps your assignments and email events private. You type it once per device. |
 | `SUPABASE_URL` | Supabase project URL (step 1) |
 | `SUPABASE_SERVICE_KEY` | Supabase **secret** key (step 1) |
-| `SCHOOLOGY_ICAL_URL` | Your private Schoology calendar link (step 2) |
+| `SCHOOLOGY_ICAL_URL` | Optional: a Schoology calendar link that works without logging in (step 2) |
 | `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL` | OmniRoute (or any OpenAI-compatible gateway) for reading emails, tagging Mind items and ✨ Polish (step 3) |
 | `ANTHROPIC_API_KEY` | Instead of the three above: a Claude API key (step 3) |
 | `GMAIL_ADDRESS` / `GMAIL_APP_PASSWORD` | Gmail connection (step 4) |
@@ -25,12 +25,19 @@ Plan on about 30 minutes, once. You'll collect these values. For Vercel paste th
 3. Open **Project Settings → API Keys**. Copy the **Project URL** into `SUPABASE_URL` and a **secret key** (`sb_secret_…`, or the legacy `service_role` key) into `SUPABASE_SERVICE_KEY`.
    Never put the secret key in an HTML file. It only goes in Vercel.
 
-## 2. Schoology calendar link
+## 2. Schoology
 
-1. In Schoology, open **Calendar** (top bar), then look for **Export** / **Subscribe** (on some schools it's under the ⚙ or "…" menu).
-2. Copy the private link (starts with `webcal://` or `https://`). Paste it into `SCHOOLOGY_ICAL_URL`.
+**If your school only lets you download the calendar** (the export link sends you to a login page), which is the case for wsdweb.schoology.com:
 
-The School page refreshes every 10 minutes while it's open, and a daily job keeps a saved copy. If some assignments show up as **Unsorted**, your school's feed doesn't include class names. Open **School → Classes** and add rules like "title contains `Chem` → Chemistry".
+1. Keep the app running on your computer (`npm start`).
+2. In Schoology open **Calendar → Export**. The file lands in Downloads.
+3. The app imports it within a few seconds. Only the newest Schoology file counts; old ones in Downloads are ignored.
+
+Export again whenever you want new assignments. Once a week, or whenever teachers post something, works well. You can also click **Import** on the School page and pick the file.
+
+**If your Export gives a subscription link** that downloads without logging in (try it in a private window), put it in `SCHOOLOGY_ICAL_URL` instead, and the app refreshes it by itself.
+
+Schoology's file doesn't say which class each item belongs to, so the AI sorts recent items into classes from their titles. It remembers each guess and only asks about new items. If it gets one wrong, tap the assignment and move it, or open **Classes** to add a rule like "title contains `LEQ` → AP US History". Your rules always win over the AI.
 
 ## 3. AI (OmniRoute or Claude)
 
@@ -86,11 +93,11 @@ Vercel runs `/api/cron` once a day (that's the free plan's limit), which refresh
 
 Needs [Node.js](https://nodejs.org) 20.12 or newer.
 
-1. In this folder, copy `.env.example` to `.env` and fill it in (steps 2–4 above). Supabase (step 1) and `CRON_SECRET` are optional here: without Supabase, everything is saved in the `data` folder next to this file.
+1. In this folder, copy `.env.example` to `.env` and fill it in (steps 3–4 above). Supabase (step 1) and `CRON_SECRET` are optional here: without Supabase, everything is saved in the `data` folder next to this file.
 2. Run `npm install` once, then `npm start`.
 3. Open [http://localhost:3210](http://localhost:3210). The terminal shows which AI it's using.
 
-While it runs it refreshes Schoology and scans Gmail every 15 minutes (`SYNC_MINUTES` changes that), even with no page open. Close the terminal and it stops. If you set up Supabase, data lives there instead, and a Vercel deployment would see the same lists, notes and assignments. Back up the `data` folder if you don't use Supabase.
+While it runs it imports Schoology exports from Downloads and scans Gmail every 15 minutes (`SYNC_MINUTES` changes that), even with no page open. Close the terminal and it stops. If you set up Supabase, data lives there instead, and a Vercel deployment would see the same lists, notes and assignments. Back up the `data` folder if you don't use Supabase.
 
 To open it from your phone on the same Wi-Fi, add `HOST=0.0.0.0` to `.env` and visit `http://YOUR-PC-IP:3210`. 
 

@@ -81,7 +81,7 @@ async function postChat(body) {
   if (process.env.AI_API_KEY) headers.Authorization = 'Bearer ' + process.env.AI_API_KEY;
   let r;
   try {
-    r = await fetch(base + '/chat/completions', { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(55000) });
+    r = await fetch(base + '/chat/completions', { method: 'POST', headers, body: JSON.stringify(body), signal: AbortSignal.timeout(Number(process.env.AI_TIMEOUT_MS) || 55000) });
   } catch (e) {
     throw new Error('Could not reach the AI gateway at ' + base + ' (is OmniRoute running?): ' + (e.cause?.code || e.message));
   }

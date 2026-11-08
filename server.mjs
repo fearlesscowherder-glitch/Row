@@ -7,6 +7,7 @@
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
 const ROOT = path.dirname(fileURLToPath(import.meta.url));
@@ -15,6 +16,8 @@ if (fs.existsSync(envFile)) process.loadEnvFile(envFile);
 
 // Without Supabase, keep data in ./data on this computer.
 if (!process.env.SUPABASE_URL && !process.env.LOCAL_DATA_DIR) process.env.LOCAL_DATA_DIR = path.join(ROOT, 'data');
+// No serverless time limit here, so allow slow local models more time.
+if (!process.env.AI_TIMEOUT_MS) process.env.AI_TIMEOUT_MS = '180000';
 const PORT = Number(process.env.PORT || 3210);
 const HOST = process.env.HOST || '127.0.0.1';
 const SYNC_MINUTES = Number(process.env.SYNC_MINUTES || 15);
@@ -66,14 +69,13 @@ const server = http.createServer(async (req, res) => {
 
 // Background refresh (what Vercel's cron does, but more often).
 async function backgroundSync() {
-  const { hasDb, setRow, PREFIX } = await import('./api/_lib.js');
+  const { hasDb } = await import('./api/_lib.js');
   if (!hasDb()) return;
   const parts = [];
   if (process.env.SCHOOLOGY_ICAL_URL) {
     try {
       const { fetchSchoology } = await import('./api/schoology.js');
       const body = await fetchSchoology();
-      await setRow(PREFIX + 'school_cache', body);
       parts.push('schoology ' + body.assignments.length);
     } catch (e) { parts.push('schoology error: ' + e.message); }
   }
@@ -83,6 +85,48 @@ async function backgroundSync() {
     parts.push('gmail ' + JSON.stringify(r));
   } catch (e) { parts.push('gmail error: ' + e.message); }
   console.log(new Date().toLocaleTimeString(), 'sync:', parts.join(' | '));
+}
+
+// Schoology exports land in Downloads; import the newest one whenever it changes.
+const DOWNLOADS = process.env.DOWNLOADS_DIR || path.join(os.homedir(), 'Downloads');
+let lastImported = 0, importing = false, importTimer = null;
+async function importFromDownloads() {
+  if (importing) return;
+  importing = true;
+  try {
+    const { getRow, setRow, hasDb, PRIVATE_PREFIX } = await import('./api/_lib.js');
+    if (!hasDb()) return;
+    if (!lastImported) lastImported = ((await getRow(PRIVATE_PREFIX + 'school_import')) || {}).mtime || 0;
+    const files = fs.readdirSync(DOWNLOADS).filter(f => /.ics$/i.test(f))
+      .map(f => ({ f, t: fs.statSync(path.join(DOWNLOADS, f)).mtimeMs }))
+      .filter(x => x.t > lastImported).sort((a, b) => b.t - a.t);
+    for (const { f, t } of files) {
+      const text = fs.readFileSync(path.join(DOWNLOADS, f), 'utf8');
+      const { isSchoologyIcs, importIcs } = await import('./api/schoology.js');
+      if (!isSchoologyIcs(text)) continue;
+      console.log(new Date().toLocaleTimeString(), 'importing Schoology export', f, '(sorting new items into classes can take a minute)…');
+      const body = await importIcs(text, 'download');
+      lastImported = t;
+      await setRow(PRIVATE_PREFIX + 'school_import', { mtime: t, file: f });
+      console.log(new Date().toLocaleTimeString(), 'imported', body.assignments.length, 'Schoology items' + (body.warning ? ' — ' + body.warning : ''));
+      break; // newest Schoology file wins
+    }
+  } catch (e) {
+    console.error('Schoology import failed:', e.message);
+  } finally { importing = false; }
+}
+function watchDownloads() {
+  if (!fs.existsSync(DOWNLOADS)) return;
+  importFromDownloads();
+  try {
+    fs.watch(DOWNLOADS, (ev, name) => {
+      if (name && !/.ics$/i.test(name)) return;
+      clearTimeout(importTimer);
+      importTimer = setTimeout(importFromDownloads, 2000);
+    });
+  } catch (e) { console.error('Cannot watch Downloads:', e.message); }
+  // fs.watch can miss events on some drives; check again every few minutes.
+  setInterval(importFromDownloads, 3 * 60000);
 }
 
 server.on('error', e => {
@@ -98,6 +142,8 @@ server.listen(PORT, HOST, async () => {
   console.log('Data: ' + (process.env.SUPABASE_URL ? 'Supabase' : process.env.LOCAL_DATA_DIR));
   console.log('AI: ' + (ai === 'gateway' ? `gateway ${process.env.AI_BASE_URL} (model ${process.env.AI_MODEL || 'auto'})` : ai === 'claude' ? 'Claude API' : 'not configured'));
   if (!fs.existsSync(envFile)) console.log('No .env file found. Copy .env.example to .env and fill it in.');
+  console.log('Watching for Schoology exports in ' + DOWNLOADS);
+  watchDownloads();
   if (SYNC_MINUTES > 0) {
     setTimeout(backgroundSync, 5000);
     setInterval(backgroundSync, SYNC_MINUTES * 60000);

@@ -1,6 +1,6 @@
 // Scheduled by vercel.json. Vercel sends "Authorization: Bearer $CRON_SECRET".
 // Refreshes the Schoology cache and scans Gmail even when no page is open.
-import { send, isCron, hasDb, setRow, PREFIX } from './_lib.js';
+import { send, isCron, hasDb } from './_lib.js';
 import { fetchSchoology } from './schoology.js';
 import { runGmailSync } from './_gmail.js';
 
@@ -9,8 +9,7 @@ export default async function handler(req, res) {
   const out = {};
   if (process.env.SCHOOLOGY_ICAL_URL && hasDb()) {
     try {
-      const body = await fetchSchoology();
-      await setRow(PREFIX + 'school_cache', body);
+      const body = await fetchSchoology(); // also saves it
       out.schoology = body.assignments.length;
     } catch (e) { out.schoology = 'error: ' + e.message; }
   }

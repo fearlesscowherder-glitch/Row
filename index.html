@@ -1342,7 +1342,7 @@ body::after {
 
   function renderDue() {
     const now = new Date(), today = App.startOfDay(now);
-    const list = App.school.list().filter(a => !a.done && a.dueDate >= App.addDays(today, -7) && a.dueDate < App.addDays(today, 3))
+    const list = App.school.list().filter(a => !a.done && !(a.kind === 'event' && a.dueDate < today) && a.dueDate >= App.addDays(today, -7) && a.dueDate < App.addDays(today, 3))
       .sort((a, b) => a.dueDate - b.dueDate);
     const el = document.getElementById('glDue');
     if (!App.school.cached()) { el.innerHTML = '<li class="glance-empty">Connect Schoology on the School page.</li>'; return; }

@@ -58,6 +58,8 @@
     <div class="row wrap">
       <span id="sync"></span>
       <button class="btn btn-sm" id="classesBtn">Classes</button>
+      <button class="btn btn-sm" id="importBtn" title="Import a file from Schoology → Calendar → Export">Import</button>
+      <input type="file" id="importFile" accept=".ics,text/calendar" hidden>
       <button class="btn btn-sm" id="refreshBtn">↻ Refresh</button>
     </div>
   </div>
@@ -107,7 +109,7 @@
   function matches(a) {
     const now = new Date(), today = App.startOfDay(now);
     if (filter === 'upcoming' && (a.done || a.dueDate < today)) return false;
-    if (filter === 'overdue' && (a.done || a.dueDate >= now || a.dueDate < App.addDays(today, -45))) return false;
+    if (filter === 'overdue' && (a.done || a.kind === 'event' || a.dueDate >= now || a.dueDate < App.addDays(today, -45))) return false;
     if (filter === 'done' && !a.done) return false;
     if (onlyClass && a.cls !== onlyClass) return false;
     if (query) {
@@ -147,18 +149,21 @@
     let banner = '';
     if (lastError && lastError.offline) {
       banner = '<div class="banner"><div><b>Schoology sync needs the server.</b> Run <code>npm start</code> (or deploy to Vercel) and add <code>SCHOOLOGY_ICAL_URL</code> (see SETUP.md). Opening the file directly can\'t reach Schoology.</div></div>';
-    } else if (lastError && /SCHOOLOGY_ICAL_URL/.test(lastError.message)) {
-      banner = '<div class="banner"><div><b>Add your Schoology calendar link.</b> In Schoology open <b>Calendar → Export</b>, right-click the export button → <b>Copy link address</b>, and save it in <code>.env</code> as <code>SCHOOLOGY_ICAL_URL</code>. Then restart.</div></div>';
+    } else if (lastError && /No Schoology assignments yet/.test(lastError.message)) {
+      banner = '<div class="banner"><div><b>Bring in your assignments.</b> In Schoology open <b>Calendar → Export</b>. While the app is running on this computer (<code>npm start</code>) it picks up the downloaded file automatically. Or click <b>Import</b> and choose the file.</div><button class="btn btn-sm" data-import>Import file</button></div>';
     } else if (lastError) {
       banner = '<div class="banner err"><div><b>Couldn\'t refresh from Schoology:</b> ' + esc(lastError.message) + (feed ? ' Showing the last saved copy.' : '') + '</div></div>';
     } else if (feed && feed.warning) {
       banner = '<div class="banner"><div>Schoology didn\'t answer just now, so this is the last saved copy. (' + esc(feed.warning) + ')</div></div>';
     }
-    const unsorted = all.filter(a => a.cls === 'Unsorted' && !a.done).length;
+    const recentFrom = App.addDays(App.startOfDay(new Date()), -14);
+    const unsorted = all.filter(a => a.cls === 'Unsorted' && !a.done && a.dueDate >= recentFrom).length;
     if (unsorted && all.length) {
       banner += '<div class="banner"><div><b>' + unsorted + (unsorted > 1 ? ' assignments have' : ' assignment has') + ' no class.</b> Your feed doesn\'t say which class some items belong to. Open <b>Classes</b> to add a rule like “title contains <i>Chem</i> → Chemistry”, or tap an assignment to move it.</div><button class="btn btn-sm" data-open-classes>Set up classes</button></div>';
     }
     $('banner').innerHTML = banner;
+    const ib = $('banner').querySelector('[data-import]');
+    if (ib) ib.onclick = () => $('importFile').click();
     const oc = $('banner').querySelector('[data-open-classes]');
     if (oc) oc.onclick = openClasses;
 
@@ -237,6 +242,19 @@
   });
   $('search').addEventListener('input', e => { query = e.target.value.trim().toLowerCase(); render(); });
   $('refreshBtn').onclick = () => refresh(true);
+  $('importBtn').onclick = () => $('importFile').click();
+  $('importFile').onchange = async e => {
+    const f = e.target.files[0]; e.target.value = '';
+    if (!f) return;
+    $('importBtn').disabled = true; $('importBtn').textContent = 'Importing…';
+    App.toast('Importing — sorting new items into classes can take a minute');
+    try {
+      const body = await App.api('/api/schoology', { method: 'POST', body: { ics: await f.text() } });
+      await refresh(true);
+      App.toast('Imported ' + body.assignments.length + ' items' + (body.warning ? ' (' + body.warning + ')' : ''), !!body.warning);
+    } catch (err) { App.toast(err.message, true); }
+    $('importBtn').disabled = false; $('importBtn').textContent = 'Import';
+  };
   $('classesBtn').onclick = openClasses;
   $('viewSeg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.v === view));
 
