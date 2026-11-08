@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050506">
+<title>My Calendar</title>
+<link rel="stylesheet" href="app.css">
+<script src="topbar.js" defer></script>
+<script src="app-core.js"></script>
+<style>
+.cal-layout { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
+@media (max-width: 900px) { .cal-layout { grid-template-columns: 1fr; } }
+
+.month-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+.month-head h2 { margin: 0 6px 0 0; font-size: 19px; color: var(--text-primary); letter-spacing: -0.01em; min-width: 150px; }
+.sources { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+
+.grid-card { padding: 10px; }
+.dow, .days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); }
+.dow div { font-size: 10.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--text-tertiary); padding: 4px 6px 8px; }
+.day {
+  min-height: 104px; padding: 5px; border-radius: 10px; cursor: pointer;
+  border: 1px solid transparent; display: flex; flex-direction: column; gap: 3px; min-width: 0;
+}
+.day:hover { background: rgba(255,255,255,0.035); }
+.day.other { opacity: .38; }
+.day.sel { border-color: var(--line-strong); background: rgba(255,255,255,0.05); }
+.day-num { font-size: 12px; font-weight: 600; color: var(--text-secondary); width: 24px; height: 24px; display: grid; place-items: center; border-radius: 50%; font-variant-numeric: tabular-nums; }
+.day.today .day-num { background: var(--accent); color: #0A0A0B; }
+.pill {
+  display: block; font-size: 11px; line-height: 1.3; padding: 2px 6px; border-radius: 5px;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  background: color-mix(in srgb, var(--c) 18%, transparent); color: var(--text-primary);
+  border-left: 2px solid var(--c);
+}
+.pill.done { opacity: .45; text-decoration: line-through; }
+.more { font-size: 10.5px; color: var(--text-tertiary); padding-left: 4px; }
+@media (max-width: 640px) {
+  .day { min-height: 54px; padding: 3px; align-items: center; }
+  .pill, .more { display: none; }
+  .dots { display: flex !important; }
+}
+.dots { display: none; gap: 2px; flex-wrap: wrap; justify-content: center; }
+.dots .dot { width: 5px; height: 5px; }
+
+.agenda h3 { margin: 0; font-size: 15px; color: var(--text-primary); }
+.agenda .card { padding: 14px; margin-bottom: 14px; }
+.ag-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+.ag-list { list-style: none; margin: 0; padding: 0; }
+.ag-item { display: flex; gap: 10px; padding: 8px 6px; border-radius: 10px; cursor: pointer; align-items: flex-start; }
+.ag-item:hover { background: rgba(255,255,255,0.04); }
+.ag-bar { width: 3px; align-self: stretch; border-radius: 3px; background: var(--c); flex-shrink: 0; }
+.ag-time { width: 54px; flex-shrink: 0; font-size: 11.5px; color: var(--text-tertiary); padding-top: 1px; font-variant-numeric: tabular-nums; }
+.ag-title { color: var(--text-primary); font-size: 13.5px; line-height: 1.35; word-break: break-word; }
+.ag-item.done .ag-title { text-decoration: line-through; color: var(--text-tertiary); }
+.ag-sub { font-size: 11.5px; color: var(--text-tertiary); margin-top: 2px; }
+.ag-day { font-size: 10.5px; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--text-tertiary); margin: 10px 6px 2px; }
+.gmail-box { font-size: 12.5px; line-height: 1.5; }
+.color-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.color-row button { width: 26px; height: 26px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+.color-row button.on { border-color: #fff; }
+.two { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">Calendar</h1>
+      <div class="page-sub">School, email, lists and your own events in one place.</div>
+    </div>
+    <div class="row wrap"><span id="sync"></span><button class="btn btn-sm btn-primary" id="addBtn">+ Event</button></div>
+  </div>
+
+  <div class="cal-layout">
+    <div>
+      <div class="month-head">
+        <h2 id="monthTitle">—</h2>
+        <button class="icon-btn" id="prev" aria-label="Previous month">‹</button>
+        <button class="icon-btn" id="next" aria-label="Next month">›</button>
+        <button class="btn btn-sm" id="todayBtn">Today</button>
+      </div>
+      <div class="sources" id="sources"></div>
+      <div class="card grid-card">
+        <div class="dow" id="dow"></div>
+        <div class="days" id="days"></div>
+      </div>
+    </div>
+
+    <aside class="agenda">
+      <div class="card">
+        <div class="ag-head"><h3 id="selTitle">Today</h3><button class="btn btn-sm" id="addDayBtn">+ Add</button></div>
+        <ul class="ag-list" id="selList"></ul>
+      </div>
+      <div class="card">
+        <div class="ag-head"><h3>Coming up</h3><span class="muted" style="font-size:12px">next 14 days</span></div>
+        <ul class="ag-list" id="upList"></ul>
+      </div>
+      <div class="card gmail-box" id="gmailBox">Checking Gmail…</div>
+    </aside>
+  </div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const { esc, store } = App;
+  const $ = id => document.getElementById(id);
+  const SOURCES = [
+    { id: 'school', label: 'School', color: '#B49AF5' },
+    { id: 'email', label: 'Email', color: App.cal.sourceColors.email },
+    { id: 'event', label: 'My events', color: App.cal.sourceColors.event },
+    { id: 'list', label: 'Lists', color: App.cal.sourceColors.list },
+    { id: 'workout', label: 'Workouts', color: App.cal.sourceColors.workout },
+  ];
+  const COLORS = ['#E07658', '#6BB8F2', '#6BE3A4', '#F2C063', '#B49AF5', '#F28DB2', '#5ED6D0'];
+  let off = {};
+  try { off = JSON.parse(localStorage.getItem('cal_sources_off') || '{}'); } catch (e) {}
+  let cursor = new Date(); cursor.setDate(1);
+  let selected = App.startOfDay(new Date());
+
+  App.syncPill($('sync'));
+  $('dow').innerHTML = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => '<div>' + d + '</div>').join('');
+
+  function visible(items) { return items.filter(i => !off[i.source]); }
+
+  function renderSources() {
+    $('sources').innerHTML = SOURCES.map(s =>
+      '<button class="chip' + (off[s.id] ? '' : ' on') + '" data-s="' + s.id + '"><span class="dot" style="background:' + s.color + '"></span>' + s.label + '</button>'
+    ).join('');
+  }
+  $('sources').addEventListener('click', e => {
+    const b = e.target.closest('.chip'); if (!b) return;
+    off[b.dataset.s] = !off[b.dataset.s];
+    try { localStorage.setItem('cal_sources_off', JSON.stringify(off)); } catch (er) {}
+    render();
+  });
+
+  function timeLabel(i) {
+    if (i.allDay) return i.source === 'school' ? 'Due' : 'All day';
+    return App.fmtTime(i.start);
+  }
+
+  function itemHtml(i) {
+    return '<li class="ag-item' + (i.done ? ' done' : '') + '" data-id="' + esc(i.id) + '" style="--c:' + i.color + '">' +
+      '<span class="ag-bar"></span><span class="ag-time">' + esc(timeLabel(i)) + '</span>' +
+      '<div class="grow"><div class="ag-title">' + esc(i.title) + '</div>' + (i.sub ? '<div class="ag-sub">' + esc(i.sub) + '</div>' : '') + '</div></li>';
+  }
+
+  let byId = {};
+  function render() {
+    renderSources();
+    $('monthTitle').textContent = cursor.toLocaleDateString([], { month: 'long', year: 'numeric' });
+    const gridStart = App.addDays(cursor, -cursor.getDay());
+    const gridEnd = App.addDays(gridStart, 42);
+    const items = visible(App.cal.items(gridStart, gridEnd));
+    byId = {};
+    const byDay = {};
+    items.forEach(i => { byId[i.id] = i; (byDay[App.dkey(i.start)] = byDay[App.dkey(i.start)] || []).push(i); });
+    const todayKey = App.dkey(new Date()), selKey = App.dkey(selected);
+
+    let html = '';
+    for (let n = 0; n < 42; n++) {
+      const d = App.addDays(gridStart, n), k = App.dkey(d);
+      const list = byDay[k] || [];
+      html += '<div class="day' + (d.getMonth() !== cursor.getMonth() ? ' other' : '') + (k === todayKey ? ' today' : '') + (k === selKey ? ' sel' : '') + '" data-d="' + k + '">' +
+        '<span class="day-num">' + d.getDate() + '</span>' +
+        list.slice(0, 3).map(i => '<span class="pill' + (i.done ? ' done' : '') + '" style="--c:' + i.color + '">' + esc(i.title) + '</span>').join('') +
+        (list.length > 3 ? '<span class="more">+' + (list.length - 3) + ' more</span>' : '') +
+        '<span class="dots">' + list.slice(0, 4).map(i => '<span class="dot" style="background:' + i.color + '"></span>').join('') + '</span>' +
+        '</div>';
+    }
+    $('days').innerHTML = html;
+    renderAgenda();
+  }
+
+  function renderAgenda() {
+    const dayItems = visible(App.cal.items(selected, App.addDays(selected, 1)));
+    dayItems.forEach(i => byId[i.id] = i);
+    $('selTitle').textContent = App.relDay(selected) === App.fmtDay(selected) ? App.fmtDay(selected, { weekday: 'long' }) : App.relDay(selected) + ' · ' + App.fmtDay(selected, { weekday: undefined });
+    $('selList').innerHTML = dayItems.length ? dayItems.map(itemHtml).join('') : '<li class="empty" style="padding:14px">Nothing on this day.</li>';
+
+    const today = App.startOfDay(new Date());
+    const up = visible(App.cal.items(today, App.addDays(today, 14))).filter(i => !i.done && i.source !== 'workout');
+    up.forEach(i => byId[i.id] = i);
+    let lastDay = '', html = '';
+    up.slice(0, 40).forEach(i => {
+      const k = App.dkey(i.start);
+      if (k !== lastDay) { html += '<li class="ag-day">' + esc(App.relDay(i.start)) + '</li>'; lastDay = k; }
+      html += itemHtml(i);
+    });
+    $('upList').innerHTML = html || '<li class="empty" style="padding:14px">Nothing coming up.</li>';
+  }
+
+  $('days').addEventListener('click', e => {
+    const d = e.target.closest('.day'); if (!d) return;
+    selected = App.parseWhen(d.dataset.d);
+    if (selected.getMonth() !== cursor.getMonth()) { cursor = new Date(selected); cursor.setDate(1); }
+    render();
+    if (window.innerWidth <= 900) document.querySelector('.agenda').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+  $('days').addEventListener('dblclick', e => { const d = e.target.closest('.day'); if (d) openEvent(null, d.dataset.d); });
+  $('prev').onclick = () => { cursor.setMonth(cursor.getMonth() - 1); render(); };
+  $('next').onclick = () => { cursor.setMonth(cursor.getMonth() + 1); render(); };
+  $('todayBtn').onclick = () => { cursor = new Date(); cursor.setDate(1); selected = App.startOfDay(new Date()); render(); };
+  $('addBtn').onclick = () => openEvent(null, App.dkey(selected));
+  $('addDayBtn').onclick = () => openEvent(null, App.dkey(selected));
+  ['selList', 'upList'].forEach(id => $(id).addEventListener('click', e => {
+    const li = e.target.closest('.ag-item'); if (!li) return;
+    openItem(byId[li.dataset.id]);
+  }));
+
+  // ---------- open an item ----------
+  function openItem(i) {
+    if (!i) return;
+    if (i.source === 'event') return openEvent(i.ref);
+    if (i.source === 'school') {
+      const a = i.ref;
+      const m = App.modal('<h2>' + esc(a.title) + '</h2><p class="muted" style="margin:0;font-size:13px">' + esc(a.cls) + ' · due ' + esc(App.relDay(a.dueDate) + (a.allDay ? '' : ' ' + App.fmtTime(a.dueDate))) + '</p>' +
+        (a.description ? '<p style="white-space:pre-wrap;font-size:13px;line-height:1.5;max-height:200px;overflow:auto">' + esc(a.description) + '</p>' : '') +
+        '<div class="modal-actions">' + (a.url ? '<a class="btn btn-sm" target="_blank" rel="noopener" href="' + esc(a.url) + '">Open in Schoology ↗</a>' : '') +
+        '<button class="btn btn-sm btn-primary" data-done>' + (a.done ? 'Mark not done' : 'Mark done ✓') + '</button></div>', { noFocus: true });
+      m.el.querySelector('[data-done]').onclick = () => { App.school.toggleDone(a.id, !a.done); m.close(); render(); };
+      return;
+    }
+    if (i.source === 'list') {
+      const lists = store.get('lists', { lists: [] });
+      const l = lists.lists.find(x => x.id === i.ref.list.id);
+      const it = l && l.items.find(x => x.id === i.ref.item.id);
+      if (it) { it.done = !it.done; store.set('lists', lists); App.toast(it.done ? 'Checked off' : 'Unchecked'); render(); }
+      return;
+    }
+    if (i.source === 'email') {
+      const ev = i.ref;
+      const when = App.parseWhen(ev.start);
+      const m = App.modal('<h2>' + esc(ev.title) + '</h2>' +
+        '<p class="muted" style="margin:0 0 8px;font-size:13px">' + esc(App.fmtDay(when, { weekday: 'long' }) + (ev.allDay ? '' : ' · ' + App.fmtTime(when) + (ev.end ? '–' + App.fmtTime(App.parseWhen(ev.end)) : ''))) + (ev.location ? ' · ' + esc(ev.location) : '') + '</p>' +
+        (ev.notes ? '<p style="font-size:13px;line-height:1.5">' + esc(ev.notes) + '</p>' : '') +
+        '<p class="muted" style="font-size:12px;line-height:1.5">Found in “' + esc(ev.subject) + '”<br>' + esc(ev.from) + '</p>' +
+        '<div class="modal-actions" style="justify-content:space-between"><button class="btn btn-sm btn-ghost btn-danger" data-rm>Remove</button><div class="row">' +
+        '<a class="btn btn-sm" href="' + esc(ev.link) + '" target="_blank" rel="noopener">Open email ↗</a>' +
+        '<button class="btn btn-sm btn-primary" data-keep>Edit as my event</button></div></div>', { noFocus: true });
+      m.el.querySelector('[data-rm]').onclick = () => { hideEmail(ev.id); m.close(); render(); App.toast('Removed from calendar'); };
+      m.el.querySelector('[data-keep]').onclick = () => {
+        const own = { id: App.uid(), title: ev.title, start: ev.start, end: ev.end || '', allDay: ev.allDay, location: ev.location, notes: (ev.notes ? ev.notes + '\n' : '') + 'From email: ' + ev.subject, color: App.cal.sourceColors.email };
+        const all = store.get('cal_events', []); all.push(own); store.set('cal_events', all);
+        hideEmail(ev.id); m.close(); openEvent(own);
+      };
+    }
+  }
+  function hideEmail(id) { const h = store.get('email_hidden', {}); h[id] = Date.now(); store.set('email_hidden', h); }
+
+  // ---------- add / edit event ----------
+  function openEvent(ev, dateKey) {
+    const isNew = !ev;
+    ev = ev || { id: App.uid(), title: '', start: dateKey || App.dkey(new Date()), end: '', allDay: true, location: '', notes: '', color: COLORS[0] };
+    const s = App.parseWhen(ev.start), e2 = App.parseWhen(ev.end);
+    const hhmm = d => d ? String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0') : '';
+    let color = ev.color || COLORS[0];
+    const m = App.modal(
+      '<h2>' + (isNew ? 'New event' : 'Edit event') + '</h2>' +
+      '<label for="evT">Title</label><input id="evT" class="input" value="' + esc(ev.title) + '" placeholder="Soccer practice">' +
+      '<label for="evD">Date</label><input id="evD" class="input" type="date" value="' + App.dkey(s) + '">' +
+      '<label class="row" style="gap:8px;margin-top:12px;color:var(--text-secondary)"><input type="checkbox" class="check" id="evAll" ' + (ev.allDay ? 'checked' : '') + '> All day</label>' +
+      '<div class="two" id="evTimes" style="' + (ev.allDay ? 'display:none' : '') + '"><div><label for="evS">Starts</label><input id="evS" class="input" type="time" value="' + (ev.allDay ? '15:00' : hhmm(s)) + '"></div>' +
+      '<div><label for="evE">Ends</label><input id="evE" class="input" type="time" value="' + (ev.allDay ? '16:00' : hhmm(e2)) + '"></div></div>' +
+      '<label for="evL">Location</label><input id="evL" class="input" value="' + esc(ev.location || '') + '">' +
+      '<label for="evN">Notes</label><textarea id="evN" class="textarea" rows="3">' + esc(ev.notes || '') + '</textarea>' +
+      '<label>Color</label><div class="color-row">' + COLORS.map(c => '<button type="button" data-c="' + c + '" style="background:' + c + '" class="' + (c === color ? 'on' : '') + '" aria-label="Color"></button>').join('') + '</div>' +
+      '<div class="modal-actions" style="justify-content:space-between">' + (isNew ? '<span></span>' : '<button class="btn btn-sm btn-ghost btn-danger" data-del>Delete</button>') +
+      '<div class="row"><button class="btn btn-ghost" data-x>Cancel</button><button class="btn btn-primary" data-save>Save</button></div></div>');
+    const q = sel => m.el.querySelector(sel);
+    q('#evAll').onchange = e => { q('#evTimes').style.display = e.target.checked ? 'none' : ''; };
+    q('.color-row').onclick = e => { const b = e.target.closest('button'); if (!b) return; color = b.dataset.c; m.el.querySelectorAll('.color-row button').forEach(x => x.classList.toggle('on', x === b)); };
+    q('[data-x]').onclick = () => m.close();
+    q('#evT').addEventListener('keydown', e => { if (e.key === 'Enter') q('[data-save]').click(); });
+    if (!isNew) q('[data-del]').onclick = () => {
+      store.set('cal_events', store.get('cal_events', []).filter(x => x.id !== ev.id)); m.close(); render();
+    };
+    q('[data-save]').onclick = () => {
+      const title = q('#evT').value.trim(); if (!title) { q('#evT').focus(); return; }
+      const date = q('#evD').value || App.dkey(new Date());
+      const allDay = q('#evAll').checked;
+      const out = Object.assign({}, ev, {
+        title, allDay, color,
+        start: allDay ? date : date + 'T' + (q('#evS').value || '09:00') + ':00',
+        end: allDay || !q('#evE').value ? '' : date + 'T' + q('#evE').value + ':00',
+        location: q('#evL').value.trim(), notes: q('#evN').value.trim(),
+      });
+      const all = store.get('cal_events', []).filter(x => x.id !== ev.id);
+      all.push(out); store.set('cal_events', all);
+      selected = App.startOfDay(App.parseWhen(out.start));
+      cursor = new Date(selected); cursor.setDate(1);
+      m.close(); render();
+    };
+  }
+
+  // ---------- Gmail ----------
+  async function renderGmail() {
+    const box = $('gmailBox');
+    let st;
+    try { st = await App.gmail.status(); }
+    catch (e) {
+      box.innerHTML = '<b style="color:var(--text-primary)">Email → calendar</b><br><span class="muted">' +
+        (e.offline ? 'Needs the server: run npm start (or deploy to Vercel).' : e.status === 401 ? 'Unlock the app to see Gmail status.' : esc(e.message)) + '</span>';
+      return;
+    }
+    if (!st.connected && !st.oauthAvailable) {
+      box.innerHTML = '<b style="color:var(--text-primary)">Email → calendar</b><p class="muted" style="margin:4px 0 0">' +
+        'Add <code>GMAIL_ADDRESS</code> and a Gmail app password (<code>GMAIL_APP_PASSWORD</code>) to your settings, then restart. SETUP.md step 4 shows how.</p>';
+      return;
+    }
+    if (!st.connected || st.needsReconnect) {
+      box.innerHTML = '<b style="color:var(--text-primary)">Email → calendar</b><p class="muted" style="margin:4px 0 10px">' +
+        (st.needsReconnect ? 'Gmail access expired. Reconnect to keep adding events.' : 'Connect Gmail and new emails with dates (practices, meetings, deadlines) appear here automatically.') +
+        '</p><button class="btn btn-sm btn-primary" id="gConnect">' + (st.needsReconnect ? 'Reconnect Gmail' : 'Connect Gmail') + '</button>';
+      $('gConnect').onclick = () => App.gmail.connect().catch(e => App.toast(e.message, true));
+      return;
+    }
+    const last = st.lastRun ? new Date(st.lastRun) : null;
+    box.innerHTML = '<div class="row" style="justify-content:space-between"><b style="color:var(--text-primary)"><span class="dot" style="background:var(--success);margin-right:6px"></span>Gmail connected</b>' +
+      '<button class="btn btn-sm" id="gScan">Scan now</button></div>' +
+      '<div class="muted" style="margin-top:6px">' + (last ? 'Last scan ' + App.relDay(last).toLowerCase() + ' ' + App.fmtTime(last) + (st.added != null ? ' · ' + st.added + ' new event' + (st.added === 1 ? '' : 's') : '') : 'Not scanned yet') + '</div>' +
+      (st.lastError ? '<div style="color:var(--danger);margin-top:6px">' + esc(st.lastError) + '</div>' : '');
+    $('gScan').onclick = async () => {
+      $('gScan').disabled = true; $('gScan').textContent = 'Scanning…';
+      try { const r = await App.gmail.sync(true); App.toast(r.added ? 'Added ' + r.added + ' event' + (r.added > 1 ? 's' : '') + ' from email' : 'No new events in email'); }
+      catch (e) { App.toast(e.message, true); }
+      renderGmail(); render();
+    };
+  }
+
+  App.on('change', ev => { if (ev.remote) render(); });
+  App.on('school', render);
+  store.watch(['cal_events', 'email_events', 'email_hidden', 'lists', 'school_meta']);
+  render();
+  App.school.refresh(false).catch(() => {});
+
+  if (new URLSearchParams(location.search).get('gmail') === 'connected') {
+    history.replaceState(null, '', location.pathname);
+    App.toast('Gmail connected. Scanning recent emails…');
+    App.gmail.sync(true).then(r => { if (r) App.toast('Added ' + (r.added || 0) + ' event(s) from email'); render(); renderGmail(); }).catch(e => App.toast(e.message, true));
+  } else {
+    App.gmail.maybeSync().then(() => { render(); renderGmail(); });
+  }
+  renderGmail();
+  setInterval(() => {
+    if (document.hidden) return;
+    App.gmail.maybeSync().then(r => { if (r) { render(); renderGmail(); } });
+    App.school.refresh(false).catch(() => {});
+  }, 10 * 60 * 1000 + 5000);
+})();
+</script>
+</body>
+</html>

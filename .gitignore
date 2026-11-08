@@ -3,3 +3,12 @@
 .vscode/
 .idea/
 *.swp
+
+# Node / Vercel
+node_modules/
+.vercel/
+.env*
+!.env.example
+
+# Local app data (when running without Supabase)
+data/

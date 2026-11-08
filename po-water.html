@@ -1113,5 +1113,8 @@ html, body {
 }
 </style>
 
+<!-- Sync this page across devices through the dashboard server (see SETUP.md). -->
+<script src="app-core.js"></script>
+<script>window.App && App.mirror("water", function (k) { return k === "po_water_v1"; });</script>
 </body>
 </html>

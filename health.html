@@ -1014,5 +1014,8 @@ main {
 })();
 </script>
 
+<!-- Sync this page across devices through the dashboard server (see SETUP.md). -->
+<script src="app-core.js"></script>
+<script>window.App && App.mirror("stack", function (k) { return /^stack:/.test(k); });</script>
 </body>
 </html>

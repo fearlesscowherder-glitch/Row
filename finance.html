@@ -3376,5 +3376,8 @@ input[type="date"]::-webkit-calendar-picker-indicator {
 })();
 </script>
 
+<!-- Sync this page across devices through the dashboard server (see SETUP.md). -->
+<script src="app-core.js"></script>
+<script>window.App && App.mirror("finance", function (k) { return /^(nw:|nw_currency|subs|wishlist)/.test(k); });</script>
 </body>
 </html>

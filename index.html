@@ -6,6 +6,7 @@
 <meta name="theme-color" content="#050506">
 <title>Abhay's Dashboard</title>
 <script src="topbar.js" defer></script>
+<script src="app-core.js"></script>
 <style>
 :root {
   --text-primary: #FAFAFA;
@@ -587,6 +588,25 @@ body::after {
 }
 .gm-status.gm-status-error { color: var(--danger); }
 
+/* ===== Today at a glance ===== */
+.glance { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; margin-bottom: 18px; }
+@media (max-width: 860px) { .glance { grid-template-columns: 1fr; } }
+.glance-card { display: block; text-decoration: none; color: inherit; margin-bottom: 0; padding: 16px 18px; transition: background .2s; }
+.glance-card:hover { background: rgba(255,255,255,0.06); }
+.glance-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
+.glance-link { font-size: 11.5px; color: var(--text-tertiary); }
+.glance-list { list-style: none; margin: 0; padding: 0; }
+.glance-list li { display: flex; gap: 9px; align-items: baseline; padding: 5px 0; font-size: 13.5px; color: var(--text-primary); line-height: 1.35; }
+.glance-list .gl-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; transform: translateY(-1px); }
+.glance-list .gl-t { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.glance-list .gl-w { font-size: 11.5px; color: var(--text-tertiary); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.glance-list .gl-w.late { color: var(--danger); }
+.glance-list .gl-w.soon { color: var(--warning); }
+.glance-empty { color: var(--text-tertiary) !important; font-size: 13px !important; }
+.glance-gym { font-size: 14px; color: var(--text-primary); line-height: 1.45; }
+.glance-gym .big { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; display: block; margin-bottom: 2px; }
+.glance-gym .sub { font-size: 12.5px; color: var(--text-tertiary); }
+
 @media (max-width: 480px) {
   body { padding: max(20px, env(safe-area-inset-top)) 14px 50px; }
   .gm-card { padding: 16px; }
@@ -635,6 +655,24 @@ body::after {
       <div class="day-ring-status"    id="dayRingStatus">Loading…</div>
       <div class="day-ring-remaining" id="dayRingRemaining">—</div>
       <div class="day-ring-hours">8:00 AM – 12:00 AM</div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">Today at a glance</div>
+    <div class="glance">
+      <a class="gm-card glance-card" href="school.html">
+        <div class="glance-head"><span class="gm-eyebrow">Due soon</span><span class="glance-link">School →</span></div>
+        <ul class="glance-list" id="glDue"><li class="glance-empty">Loading…</li></ul>
+      </a>
+      <a class="gm-card glance-card" href="calendar.html">
+        <div class="glance-head"><span class="gm-eyebrow">Today's schedule</span><span class="glance-link">Calendar →</span></div>
+        <ul class="glance-list" id="glCal"><li class="glance-empty">Loading…</li></ul>
+      </a>
+      <a class="gm-card glance-card" href="gym.html">
+        <div class="glance-head"><span class="gm-eyebrow">Workout</span><span class="glance-link">Log →</span></div>
+        <div id="glGym" class="glance-gym">—</div>
+      </a>
     </div>
   </div>
 
@@ -695,9 +733,6 @@ body::after {
 <script>
 (function () {
   'use strict';
-
-  // Paste your Anthropic key here to enable ✨ Polish. Empty = falls back to plain add.
-  const ANTHROPIC_API_KEY = '';
 
   const WAKE_HOUR  = 8;
   const SLEEP_HOUR = 24;
@@ -1209,31 +1244,12 @@ body::after {
     el._t = setTimeout(() => { el.textContent = ''; el.classList.remove('gm-status-error'); }, 3500);
   }
 
+  // Polish runs on the server (/api/ai) so the Anthropic key never
+  // reaches the browser.
   async function polishOne(text) {
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': ANTHROPIC_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true'
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-5',
-        max_tokens: 1000,
-        messages: [{
-          role: 'user',
-          content:
-            'Rewrite this single goal so it is concrete, action-oriented, and under 60 characters. ' +
-            'Return ONLY a JSON array with exactly one string, no preamble, no code fences.\n\nGoal: ' + text
-        }]
-      })
-    });
-    const data = await res.json();
-    const content = (data && data.content && data.content[0] && data.content[0].text) || '';
-    const arr = JSON.parse(content);
-    if (!Array.isArray(arr) || arr.length < 1 || typeof arr[0] !== 'string') throw new Error('bad response');
-    return arr[0].trim();
+    const out = await window.App.api('/api/ai', { method: 'POST', body: { task: 'polish', text } });
+    if (!out || typeof out.text !== 'string' || !out.text.trim()) throw new Error('bad response');
+    return out.text.trim();
   }
 
   function makeAddHandlers(input, addBtn, polishBtn, key, statusEl, reload) {
@@ -1255,9 +1271,9 @@ body::after {
     polishBtn.addEventListener('click', async () => {
       const text = input.value.trim();
       if (!text) return;
-      if (!ANTHROPIC_API_KEY) {
+      if (!window.App || !window.App.serverAvailable) {
         plainAdd(text);
-        showStatus(statusEl, 'Polish needs an Anthropic API key — added as-typed.', false);
+        showStatus(statusEl, 'Polish needs the server (npm start) — added as-typed.', false);
         return;
       }
       polishBtn.disabled = true;
@@ -1304,6 +1320,85 @@ body::after {
   window.addEventListener('storage', () => {
     loadToday(); loadTomorrow(); renderStreak();
   });
+})();
+</script>
+
+<script>
+// ---------- Today at a glance + sync for goals ----------
+(function () {
+  'use strict';
+  const App = window.App;
+  const esc = App.esc;
+
+  // Sync this page's goals across devices; re-render instead of reloading.
+  App.mirror('goals', k => k.indexOf('goals:') === 0 || k === 'goal_streak_v1', {
+    onApply: () => window.dispatchEvent(new Event('storage')),
+  });
+
+  function li(color, title, when, cls) {
+    return '<li><span class="gl-dot" style="background:' + color + '"></span><span class="gl-t">' + esc(title) +
+      '</span><span class="gl-w ' + (cls || '') + '">' + esc(when) + '</span></li>';
+  }
+
+  function renderDue() {
+    const now = new Date(), today = App.startOfDay(now);
+    const list = App.school.list().filter(a => !a.done && a.dueDate >= App.addDays(today, -7) && a.dueDate < App.addDays(today, 3))
+      .sort((a, b) => a.dueDate - b.dueDate);
+    const el = document.getElementById('glDue');
+    if (!App.school.cached()) { el.innerHTML = '<li class="glance-empty">Connect Schoology on the School page.</li>'; return; }
+    if (!list.length) { el.innerHTML = '<li class="glance-empty">Nothing due in the next 3 days 🎉</li>'; return; }
+    el.innerHTML = list.slice(0, 6).map(a => {
+      const late = a.dueDate < now, n = App.dayDiff(a.dueDate);
+      const when = late ? 'late' : App.relDay(a.dueDate) + (a.allDay ? '' : ' ' + App.fmtTime(a.dueDate));
+      return li(App.colorFor(a.cls), a.title, when, late ? 'late' : n === 0 ? 'soon' : '');
+    }).join('') + (list.length > 6 ? '<li class="glance-empty">+' + (list.length - 6) + ' more</li>' : '');
+  }
+
+  function renderCal() {
+    const today = App.startOfDay(new Date());
+    const items = App.cal.items(today, App.addDays(today, 1)).filter(i => i.source !== 'school' && i.source !== 'workout');
+    const el = document.getElementById('glCal');
+    el.innerHTML = items.length
+      ? items.slice(0, 6).map(i => li(i.color, i.title, i.allDay ? 'all day' : App.fmtTime(i.start), i.done ? '' : '')).join('')
+      : '<li class="glance-empty">Nothing scheduled today.</li>';
+  }
+
+  function renderGym() {
+    let state = null, done = {};
+    try { state = JSON.parse(localStorage.getItem('po_coach_v1')); } catch (e) {}
+    try { done = JSON.parse(localStorage.getItem('po_coach_workout_done')) || {}; } catch (e) {}
+    const todayK = App.dkey(new Date());
+    let sets = 0;
+    const names = new Set();
+    if (state && state.exercises && state.logs) {
+      state.exercises.forEach(ex => (state.logs[ex.id] || []).forEach(l => {
+        if (String(l.date).slice(0, 10) === todayK) { sets++; names.add(ex.name); }
+      }));
+    }
+    // Days trained in the last 7.
+    let week = 0;
+    for (let i = 0; i < 7; i++) if (done[App.dkey(App.addDays(new Date(), -i))]) week++;
+    const el = document.getElementById('glGym');
+    if (done[todayK]) {
+      el.innerHTML = '<span class="big" style="color:var(--success)">Done ✓</span><span class="sub">' + (sets ? sets + ' sets · ' + esc(Array.from(names).slice(0, 3).join(', ')) : 'Workout logged today') + ' · ' + week + '/7 this week</span>';
+    } else if (sets) {
+      el.innerHTML = '<span class="big">' + sets + ' sets</span><span class="sub">' + esc(Array.from(names).slice(0, 3).join(', ')) + ' · tap to finish</span>';
+    } else {
+      el.innerHTML = '<span class="big">Not yet</span><span class="sub">' + week + '/7 days this week · tap to log a workout</span>';
+    }
+  }
+
+  function renderAll() { renderDue(); renderCal(); renderGym(); }
+  App.on('school', renderAll);
+  App.on('change', ev => { if (ev.remote) renderAll(); });
+  // Workout status comes from the Gym page's data, synced the same way.
+  App.mirror('gym', k => /^po_coach_/.test(k) && k !== 'po_coach_photos', { onApply: renderGym });
+  App.store.watch(['school_meta', 'cal_events', 'email_events', 'email_hidden', 'lists']);
+  renderAll();
+  App.school.refresh(false).then(renderAll).catch(() => renderDue());
+  App.gmail.maybeSync().then(renderCal);
+  setInterval(renderAll, 60 * 1000);
+  setInterval(() => { if (!document.hidden) App.gmail.maybeSync().then(renderCal); }, 10 * 60 * 1000 + 5000);
 })();
 </script>
 </body>

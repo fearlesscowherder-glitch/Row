@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050506">
+<title>My Lists</title>
+<link rel="stylesheet" href="app.css">
+<script src="topbar.js" defer></script>
+<script src="app-core.js"></script>
+<style>
+.capture { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+.capture .input { flex: 1 1 240px; font-size: 15px; padding: 12px 14px; }
+.capture .select { flex: 0 1 180px; }
+.toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
+.toolbar .input { flex: 1 1 180px; }
+
+.board { columns: 300px; column-gap: 14px; }
+.sticky {
+  --c: #F2C063;
+  break-inside: avoid; margin: 0 0 14px;
+  border-radius: 16px; padding: 14px 14px 10px;
+  background: color-mix(in srgb, var(--c) 13%, #0d0d0f);
+  border: 1px solid color-mix(in srgb, var(--c) 28%, transparent);
+  box-shadow: 0 12px 34px rgba(0,0,0,0.4);
+  position: relative;
+}
+.sticky.plain { --c: #8a8a8a; background: rgba(255,255,255,0.04); border-color: var(--line); }
+.s-head { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+.s-title {
+  flex: 1; min-width: 0; border: 0; background: transparent; outline: none;
+  color: var(--text-primary); font-size: 15.5px; font-weight: 700; letter-spacing: -0.01em; padding: 2px 0;
+}
+.s-title::placeholder { color: color-mix(in srgb, var(--c) 50%, #76746E); }
+.s-pin { color: var(--c); font-size: 12px; }
+.s-items { list-style: none; margin: 0; padding: 0; }
+.s-item { display: flex; align-items: flex-start; gap: 8px; padding: 4px 0; border-radius: 8px; }
+.s-item.dragging { opacity: .4; }
+.s-item.over { box-shadow: 0 -2px 0 var(--c); }
+.s-item .check { margin-top: 3px; width: 17px; height: 17px; border-color: color-mix(in srgb, var(--c) 60%, #fff 10%); }
+.s-item .check:checked { background: var(--c); border-color: var(--c); }
+.s-text {
+  flex: 1; min-width: 0; border: 0; background: transparent; outline: none; resize: none;
+  color: var(--text-primary); font-size: 14px; line-height: 1.4; padding: 1px 0; overflow: hidden;
+}
+.s-item.done .s-text { color: var(--text-tertiary); text-decoration: line-through; }
+.s-due { font-size: 11px; padding: 2px 6px; border-radius: 6px; background: rgba(0,0,0,0.3); color: var(--text-secondary); white-space: nowrap; border: 0; cursor: pointer; margin-top: 2px; }
+.s-due.late { color: var(--danger); }
+.s-due.soon { color: var(--warning); }
+.s-act { opacity: 0; transition: opacity .15s; display: flex; gap: 0; }
+.s-item:hover .s-act, .s-item:focus-within .s-act { opacity: 1; }
+@media (hover: none) { .s-act { opacity: .7; } }
+.s-act .icon-btn { width: 24px; height: 24px; font-size: 12px; }
+.s-handle { cursor: grab; color: var(--text-tertiary); font-size: 12px; padding-top: 3px; user-select: none; }
+.s-add { display: flex; gap: 8px; align-items: center; padding: 6px 0 2px; }
+.s-add span { color: var(--text-tertiary); width: 17px; text-align: center; }
+.s-add input { flex: 1; border: 0; background: transparent; outline: none; color: var(--text-primary); font-size: 14px; }
+.s-add input::placeholder { color: var(--text-tertiary); }
+.s-done-toggle { font-size: 12px; color: var(--text-tertiary); background: none; border: 0; cursor: pointer; padding: 6px 0 2px; }
+.s-note {
+  width: 100%; border: 0; background: transparent; outline: none; resize: none;
+  color: var(--text-primary); font-size: 14px; line-height: 1.55; min-height: 70px; padding: 0;
+}
+.s-foot { font-size: 11px; color: var(--text-tertiary); margin-top: 6px; display: flex; justify-content: space-between; }
+.menu { position: absolute; right: 10px; top: 40px; z-index: 10; background: #18181b; border: 1px solid var(--line-strong); border-radius: 12px; padding: 6px; min-width: 190px; box-shadow: 0 16px 40px rgba(0,0,0,.6); }
+.menu button.mi { display: block; width: 100%; text-align: left; border: 0; background: none; color: var(--text-primary); padding: 8px 10px; border-radius: 8px; font-size: 13px; cursor: pointer; }
+.menu button.mi:hover { background: rgba(255,255,255,0.07); }
+.menu .swatches { display: flex; gap: 6px; padding: 6px 8px 8px; }
+.menu .swatches button { width: 20px; height: 20px; border-radius: 50%; border: 2px solid transparent; cursor: pointer; }
+.menu .swatches button.on { border-color: #fff; }
+.date-pop { display: flex; gap: 6px; align-items: center; padding: 2px 0 6px 25px; }
+.date-pop input { padding: 5px 8px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">Lists</h1>
+      <div class="page-sub">Everything you'd put on a sticky note. Items with dates show on your calendar.</div>
+    </div>
+    <div class="row wrap"><span id="sync"></span>
+      <button class="btn btn-sm" id="newNote">+ Note</button>
+      <button class="btn btn-sm btn-primary" id="newList">+ List</button>
+    </div>
+  </div>
+
+  <div class="capture">
+    <input class="input" id="capIn" placeholder="Jot something down… (press Enter)" autocomplete="off">
+    <select class="select" id="capList" aria-label="Add to list"></select>
+  </div>
+  <div class="toolbar">
+    <input class="input" id="search" type="search" placeholder="Search lists…" autocomplete="off">
+    <label class="row muted" style="font-size:12.5px;gap:6px"><input type="checkbox" class="check" id="hideDone"> Hide checked items</label>
+  </div>
+  <div class="board" id="board"></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const { esc, store, uid } = App;
+  const $ = id => document.getElementById(id);
+  const COLORS = { yellow: '#F2C063', peach: '#E07658', green: '#6BE3A4', blue: '#6BB8F2', purple: '#B49AF5', pink: '#F28DB2', plain: '' };
+  let query = '';
+  let showDone = {};          // listId -> bool (expanded "done" section)
+  let deferredRender = false;
+  let hideDone = false;
+  try { hideDone = localStorage.getItem('lists_hide_done') === '1'; } catch (e) {}
+  $('hideDone').checked = hideDone;
+
+  App.syncPill($('sync'));
+
+  // A starter "Inbox" that is only saved once you add something to it,
+  // so a new device never overwrites lists that already exist in sync.
+  const starter = { lists: [{ id: uid(), title: 'Inbox', color: 'yellow', type: 'list', pinned: true, items: [], created: Date.now(), updated: Date.now() }] };
+  function data() {
+    const d = store.get('lists', null);
+    if (d && Array.isArray(d.lists)) return d;
+    return JSON.parse(JSON.stringify(starter));
+  }
+  function save(d, rerender) {
+    store.set('lists', d);
+    if (rerender) render();
+  }
+  function find(d, id) { return d.lists.find(l => l.id === id); }
+  function touch(l) { l.updated = Date.now(); }
+
+  function dueBadge(due) {
+    const d = App.parseWhen(due); if (!d) return '';
+    const n = App.dayDiff(d);
+    return '<button class="s-due ' + (n < 0 ? 'late' : n <= 1 ? 'soon' : '') + '" data-act="date" title="Change date">' + esc(App.relDay(d)) + '</button>';
+  }
+
+  function itemHtml(l, it) {
+    return '<li class="s-item' + (it.done ? ' done' : '') + '" data-item="' + it.id + '" draggable="false">' +
+      '<span class="s-handle" title="Drag to reorder" data-handle>⋮⋮</span>' +
+      '<input type="checkbox" class="check" ' + (it.done ? 'checked' : '') + ' data-act="toggle" aria-label="Done">' +
+      '<textarea class="s-text" rows="1" data-act="text">' + esc(it.text) + '</textarea>' +
+      (it.due ? dueBadge(it.due) : '') +
+      '<span class="s-act">' + (it.due ? '' : '<button class="icon-btn" data-act="date" title="Add a date" aria-label="Add date">📅</button>') +
+      '<button class="icon-btn" data-act="del" title="Delete" aria-label="Delete">✕</button></span></li>';
+  }
+
+  function cardHtml(l) {
+    const color = COLORS[l.color] || '';
+    let body;
+    if (l.type === 'note') {
+      body = '<textarea class="s-note" data-act="note" placeholder="Write anything…">' + esc(l.note || '') + '</textarea>';
+    } else {
+      const items = l.items || [];
+      const open = items.filter(i => !i.done);
+      const done = items.filter(i => i.done);
+      const q = query;
+      const match = it => !q || it.text.toLowerCase().indexOf(q) >= 0 || (l.title || '').toLowerCase().indexOf(q) >= 0;
+      body = '<ul class="s-items">' + open.filter(match).map(it => itemHtml(l, it)).join('') + '</ul>' +
+        '<div class="s-add"><span>+</span><input data-act="add" placeholder="Add item" aria-label="Add item to ' + esc(l.title) + '"></div>' +
+        (done.length && !hideDone ? '<button class="s-done-toggle" data-act="showdone">' + (showDone[l.id] ? '▾' : '▸') + ' ' + done.length + ' checked</button>' +
+          (showDone[l.id] ? '<ul class="s-items">' + done.filter(match).map(it => itemHtml(l, it)).join('') + '</ul>' : '') : '');
+    }
+    const count = l.type === 'note' ? '' : (l.items || []).filter(i => !i.done).length + ' left';
+    return '<div class="sticky' + (color ? '' : ' plain') + '" data-list="' + l.id + '" style="' + (color ? '--c:' + color : '') + '">' +
+      '<div class="s-head">' + (l.pinned ? '<span class="s-pin" title="Pinned">●</span>' : '') +
+      '<input class="s-title" data-act="title" value="' + esc(l.title || '') + '" placeholder="' + (l.type === 'note' ? 'Note' : 'Untitled list') + '">' +
+      '<button class="icon-btn" data-act="menu" aria-label="List options">⋯</button></div>' +
+      body +
+      '<div class="s-foot"><span>' + count + '</span><span>' + esc(new Date(l.updated || l.created || Date.now()).toLocaleDateString([], { month: 'short', day: 'numeric' })) + '</span></div></div>';
+  }
+
+  function sorted(d) {
+    return d.lists.slice().sort((a, b) => (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0) || (b.updated || 0) - (a.updated || 0));
+  }
+
+  function render() {
+    const d = data();
+    const lists = sorted(d).filter(l => {
+      if (!query) return true;
+      return (l.title || '').toLowerCase().includes(query) || (l.note || '').toLowerCase().includes(query) ||
+        (l.items || []).some(i => i.text.toLowerCase().includes(query));
+    });
+    $('board').innerHTML = lists.length ? lists.map(cardHtml).join('') :
+      '<div class="card empty" style="column-span:all">' + (query ? 'No lists match “' + esc(query) + '”.' : 'No lists yet. Make one with + List.') + '</div>';
+    $('board').querySelectorAll('textarea').forEach(autosize);
+    const sel = $('capList'), cur = sel.value;
+    sel.innerHTML = sorted(d).filter(l => l.type !== 'note').map(l => '<option value="' + l.id + '">' + esc(l.title || 'Untitled list') + '</option>').join('');
+    if (cur && find(d, cur)) sel.value = cur;
+  }
+
+  function autosize(t) { t.style.height = 'auto'; t.style.height = t.scrollHeight + 'px'; }
+
+  // ---------- capture ----------
+  $('capIn').addEventListener('keydown', e => {
+    if (e.key !== 'Enter') return;
+    const text = e.target.value.trim(); if (!text) return;
+    const d = data();
+    let l = find(d, $('capList').value) || d.lists.find(x => x.type !== 'note');
+    if (!l) { l = { id: uid(), title: 'Inbox', color: 'yellow', type: 'list', items: [], created: Date.now() }; d.lists.push(l); }
+    l.items.unshift({ id: uid(), text, done: false, created: Date.now() });
+    touch(l); save(d, true);
+    e.target.value = '';
+  });
+
+  $('newList').onclick = () => newCard('list');
+  $('newNote').onclick = () => newCard('note');
+  function newCard(type) {
+    const d = data();
+    const keys = Object.keys(COLORS).filter(k => k !== 'plain');
+    const l = { id: uid(), title: '', color: keys[d.lists.length % keys.length], type, items: [], note: '', created: Date.now(), updated: Date.now() };
+    d.lists.push(l); save(d, true);
+    const el = $('board').querySelector('[data-list="' + l.id + '"] .s-title');
+    if (el) el.focus();
+  }
+  $('search').addEventListener('input', e => { query = e.target.value.trim().toLowerCase(); render(); });
+  $('hideDone').onchange = e => { hideDone = e.target.checked; try { localStorage.setItem('lists_hide_done', hideDone ? '1' : '0'); } catch (er) {} render(); };
+
+  // ---------- card interactions ----------
+  const board = $('board');
+  function ctx(el) {
+    const card = el.closest('[data-list]'); if (!card) return null;
+    const d = data(); const l = find(d, card.dataset.list); if (!l) return null;
+    const li = el.closest('[data-item]');
+    const it = li ? (l.items || []).find(x => x.id === li.dataset.item) : null;
+    return { d, l, it, card, li };
+  }
+
+  board.addEventListener('input', e => {
+    const act = e.target.dataset.act;
+    if (e.target.tagName === 'TEXTAREA') autosize(e.target);
+    const c = ctx(e.target); if (!c) return;
+    if (act === 'title') { c.l.title = e.target.value; touch(c.l); save(c.d); }
+    else if (act === 'note') { c.l.note = e.target.value; touch(c.l); save(c.d); }
+    else if (act === 'text' && c.it) { c.it.text = e.target.value.replace(/\n/g, ' '); touch(c.l); save(c.d); }
+  });
+
+  board.addEventListener('keydown', e => {
+    const act = e.target.dataset.act;
+    if (act === 'add' && e.key === 'Enter') {
+      const text = e.target.value.trim(); if (!text) return;
+      const c = ctx(e.target); c.l.items = c.l.items || [];
+      c.l.items.push({ id: uid(), text, done: false, created: Date.now() });
+      touch(c.l); save(c.d, true);
+      const again = board.querySelector('[data-list="' + c.l.id + '"] [data-act="add"]'); if (again) again.focus();
+    } else if (act === 'text' && e.key === 'Enter') {
+      e.preventDefault();
+      const c = ctx(e.target);
+      const i = c.l.items.indexOf(c.it);
+      const fresh = { id: uid(), text: '', done: false, created: Date.now() };
+      c.l.items.splice(i + 1, 0, fresh); save(c.d, true);
+      const el = board.querySelector('[data-item="' + fresh.id + '"] .s-text'); if (el) el.focus();
+    } else if (act === 'text' && e.key === 'Backspace' && e.target.value === '') {
+      e.preventDefault();
+      const c = ctx(e.target);
+      const i = c.l.items.indexOf(c.it);
+      c.l.items.splice(i, 1); save(c.d, true);
+      const prev = c.l.items[Math.max(0, i - 1)];
+      const el = prev && board.querySelector('[data-item="' + prev.id + '"] .s-text');
+      if (el) { el.focus(); el.selectionStart = el.value.length; }
+    } else if (act === 'title' && e.key === 'Enter') {
+      e.preventDefault();
+      const next = e.target.closest('.sticky').querySelector('[data-act="add"],[data-act="note"]'); if (next) next.focus();
+    }
+  });
+
+  board.addEventListener('focusout', e => {
+    // Drop items left empty.
+    if (e.target.dataset.act === 'text' && !e.target.value.trim()) {
+      const c = ctx(e.target); if (!c || !c.it) return;
+      c.l.items = c.l.items.filter(x => x !== c.it); save(c.d);
+      setTimeout(() => { if (!board.contains(document.activeElement)) render(); }, 0);
+    }
+    setTimeout(() => {
+      if (deferredRender && !board.contains(document.activeElement)) { deferredRender = false; render(); }
+    }, 60);
+  });
+
+  board.addEventListener('click', e => {
+    const btn = e.target.closest('[data-act]'); if (!btn) return;
+    const act = btn.dataset.act;
+    const c = ctx(btn); if (!c) return;
+    if (act === 'toggle') { c.it.done = btn.checked; c.it.doneAt = btn.checked ? Date.now() : null; touch(c.l); save(c.d); setTimeout(render, 180); }
+    else if (act === 'del') { c.l.items = c.l.items.filter(x => x !== c.it); touch(c.l); save(c.d, true); }
+    else if (act === 'showdone') { showDone[c.l.id] = !showDone[c.l.id]; render(); }
+    else if (act === 'date') { openDate(c, btn); }
+    else if (act === 'menu') { openMenu(c); }
+  });
+
+  function openDate(c, btn) {
+    const existing = c.li.nextElementSibling;
+    if (existing && existing.classList.contains('date-pop')) { existing.remove(); return; }
+    const pop = document.createElement('li');
+    pop.className = 'date-pop';
+    pop.innerHTML = '<input type="date" class="input" value="' + (c.it.due || App.dkey(new Date())) + '"><button class="btn btn-sm">Set</button>' +
+      (c.it.due ? '<button class="btn btn-sm btn-ghost">Clear</button>' : '');
+    c.li.after(pop);
+    const [setB, clrB] = pop.querySelectorAll('button');
+    const inp = pop.querySelector('input');
+    setB.onclick = () => { c.it.due = inp.value || ''; touch(c.l); save(c.d, true); };
+    if (clrB) clrB.onclick = () => { delete c.it.due; touch(c.l); save(c.d, true); };
+    inp.focus();
+  }
+
+  function openMenu(c) {
+    document.querySelectorAll('.menu').forEach(m => m.remove());
+    const menu = document.createElement('div');
+    menu.className = 'menu';
+    menu.innerHTML =
+      '<div class="swatches">' + Object.keys(COLORS).map(k => '<button data-color="' + k + '" title="' + k + '" class="' + (c.l.color === k ? 'on' : '') + '" style="background:' + (COLORS[k] || '#3a3a3e') + '"></button>').join('') + '</div>' +
+      '<button class="mi" data-m="pin">' + (c.l.pinned ? 'Unpin' : 'Pin to top') + '</button>' +
+      (c.l.type === 'note' ? '<button class="mi" data-m="tolist">Turn into checklist</button>' : '<button class="mi" data-m="tonote">Turn into note</button>') +
+      (c.l.type !== 'note' && (c.l.items || []).some(i => i.done) ? '<button class="mi" data-m="clear">Clear checked items</button>' : '') +
+      '<button class="mi" data-m="dup">Duplicate</button>' +
+      '<button class="mi" data-m="del" style="color:var(--danger)">Delete</button>';
+    c.card.appendChild(menu);
+    const close = ev => { if (!menu.contains(ev.target)) { menu.remove(); document.removeEventListener('mousedown', close); } };
+    setTimeout(() => document.addEventListener('mousedown', close), 0);
+    menu.addEventListener('click', ev => {
+      const sw = ev.target.closest('[data-color]');
+      const mi = ev.target.closest('[data-m]');
+      if (sw) { c.l.color = sw.dataset.color; save(c.d, true); return; }
+      if (!mi) return;
+      const m = mi.dataset.m;
+      if (m === 'pin') c.l.pinned = !c.l.pinned;
+      if (m === 'tonote') { c.l.note = (c.l.items || []).map(i => (i.done ? '✓ ' : '• ') + i.text).join('\n'); c.l.type = 'note'; }
+      if (m === 'tolist') { c.l.items = (c.l.note || '').split('\n').map(s => s.replace(/^[•\-*✓]\s*/, '').trim()).filter(Boolean).map(t => ({ id: uid(), text: t, done: false, created: Date.now() })); c.l.type = 'list'; }
+      if (m === 'clear') c.l.items = c.l.items.filter(i => !i.done);
+      if (m === 'dup') c.d.lists.push(Object.assign(JSON.parse(JSON.stringify(c.l)), { id: uid(), title: (c.l.title || 'List') + ' copy', created: Date.now(), updated: Date.now(), pinned: false, items: (c.l.items || []).map(i => Object.assign({}, i, { id: uid() })) }));
+      if (m === 'del') {
+        const hasStuff = (c.l.items || []).length || (c.l.note || '').trim();
+        if (hasStuff && !confirm('Delete “' + (c.l.title || 'this list') + '”?')) return;
+        c.d.lists = c.d.lists.filter(x => x !== c.l);
+        save(c.d, true);
+        App.toast('List deleted');
+        return;
+      }
+      touch(c.l); save(c.d, true);
+    });
+  }
+
+  // ---------- drag to reorder (pointer-based, works on touch) ----------
+  let drag = null;
+  board.addEventListener('pointerdown', e => {
+    if (!e.target.closest('[data-handle]')) return;
+    const li = e.target.closest('[data-item]'); const card = e.target.closest('[data-list]');
+    drag = { li, card, over: null };
+    li.classList.add('dragging');
+    e.preventDefault();
+  });
+  document.addEventListener('pointermove', e => {
+    if (!drag) return;
+    const el = document.elementFromPoint(e.clientX, e.clientY);
+    const over = el && el.closest('[data-item]');
+    if (drag.over && drag.over !== over) drag.over.classList.remove('over');
+    if (over && over !== drag.li && drag.card.contains(over)) { over.classList.add('over'); drag.over = over; } else drag.over = null;
+  });
+  document.addEventListener('pointerup', () => {
+    if (!drag) return;
+    const { li, card, over } = drag; drag = null;
+    li.classList.remove('dragging');
+    if (!over) return;
+    over.classList.remove('over');
+    const d = data(); const l = find(d, card.dataset.list);
+    const from = l.items.findIndex(x => x.id === li.dataset.item);
+    const [moved] = l.items.splice(from, 1);
+    const to = l.items.findIndex(x => x.id === over.dataset.item);
+    l.items.splice(to, 0, moved);
+    touch(l); save(d, true);
+  });
+
+  App.on('change', ev => {
+    if (ev.key !== 'lists' || !ev.remote) return;
+    if (board.contains(document.activeElement)) deferredRender = true; else render();
+  });
+  store.watch(['lists']);
+  render();
+})();
+</script>
+</body>
+</html>

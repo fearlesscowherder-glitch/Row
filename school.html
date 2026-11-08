@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050506">
+<title>School Assignments</title>
+<link rel="stylesheet" href="app.css">
+<script src="topbar.js" defer></script>
+<script src="app-core.js"></script>
+<style>
+.controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
+.controls .input { flex: 1 1 200px; }
+.class-chips { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 16px; }
+.class-chips .count { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
+
+.class-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 14px; }
+@media (max-width: 480px) { .class-grid { grid-template-columns: 1fr; } }
+.class-card { padding: 0; overflow: hidden; display: flex; flex-direction: column; }
+.class-card-head { padding: 14px 16px 10px; border-top: 3px solid var(--c); display: flex; align-items: baseline; gap: 8px; }
+.class-card-head h3 { margin: 0; font-size: 15px; color: var(--text-primary); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.class-card-head .mono { font-size: 11.5px; color: var(--text-tertiary); }
+.class-card ul { list-style: none; margin: 0; padding: 0 6px 8px; }
+
+.a-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 9px 10px; border-radius: 10px; cursor: pointer;
+}
+.a-row:hover { background: rgba(255,255,255,0.04); }
+.a-row .check { margin-top: 1px; }
+.a-main { flex: 1; min-width: 0; }
+.a-title { color: var(--text-primary); font-size: 13.5px; line-height: 1.35; word-break: break-word; }
+.a-row.done .a-title { color: var(--text-tertiary); text-decoration: line-through; }
+.a-meta { display: flex; gap: 6px; align-items: center; margin-top: 3px; font-size: 11.5px; color: var(--text-tertiary); flex-wrap: wrap; }
+.a-due { font-size: 11.5px; white-space: nowrap; text-align: right; color: var(--text-secondary); }
+.a-due.late { color: var(--danger); }
+.a-due.soon { color: var(--warning); }
+
+.date-group { margin-bottom: 14px; }
+.date-group .card { padding: 6px; }
+.date-head { display: flex; align-items: baseline; gap: 10px; margin: 0 4px 8px; }
+.date-head h3 { margin: 0; font-size: 14px; color: var(--text-primary); }
+.date-head span { font-size: 12px; color: var(--text-tertiary); }
+
+.rules-row { display: grid; grid-template-columns: 1fr 1fr 30px; gap: 6px; margin-bottom: 6px; }
+.names-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; align-items: center; font-size: 12.5px; }
+.names-row .raw { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+.detail-desc { white-space: pre-wrap; font-size: 13px; line-height: 1.55; color: var(--text-secondary); background: rgba(0,0,0,0.25); border-radius: 10px; padding: 10px 12px; max-height: 240px; overflow: auto; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="page-head">
+    <div>
+      <h1 class="page-title">School</h1>
+      <div class="page-sub" id="sub">Loading assignments…</div>
+    </div>
+    <div class="row wrap">
+      <span id="sync"></span>
+      <button class="btn btn-sm" id="classesBtn">Classes</button>
+      <button class="btn btn-sm" id="refreshBtn">↻ Refresh</button>
+    </div>
+  </div>
+
+  <div id="banner"></div>
+
+  <div class="controls">
+    <div class="seg" id="viewSeg">
+      <button data-v="class" class="on">By class</button>
+      <button data-v="date">By date</button>
+    </div>
+    <div class="seg" id="filterSeg">
+      <button data-f="upcoming" class="on">Upcoming</button>
+      <button data-f="overdue">Overdue</button>
+      <button data-f="done">Done</button>
+      <button data-f="all">All</button>
+    </div>
+    <input class="input" id="search" type="search" placeholder="Search assignments…" autocomplete="off">
+  </div>
+  <div class="class-chips" id="chips"></div>
+  <div id="out"></div>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const { esc, school, store } = App;
+  const $ = id => document.getElementById(id);
+  let view = localGet('school_view') || 'class';
+  let filter = 'upcoming';
+  let onlyClass = null;
+  let query = '';
+  let lastError = null;
+
+  function localGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  function localSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+
+  App.syncPill($('sync'));
+
+  function dueInfo(a) {
+    const d = a.dueDate, n = App.dayDiff(d);
+    const late = !a.done && d < new Date();
+    const label = App.relDay(d) + (a.allDay ? '' : ' · ' + App.fmtTime(d));
+    return { label, cls: late ? 'late' : (n <= 1 && !a.done ? 'soon' : '') };
+  }
+
+  function matches(a) {
+    const now = new Date(), today = App.startOfDay(now);
+    if (filter === 'upcoming' && (a.done || a.dueDate < today)) return false;
+    if (filter === 'overdue' && (a.done || a.dueDate >= now || a.dueDate < App.addDays(today, -45))) return false;
+    if (filter === 'done' && !a.done) return false;
+    if (onlyClass && a.cls !== onlyClass) return false;
+    if (query) {
+      const hay = (a.title + ' ' + a.cls + ' ' + (a.description || '')).toLowerCase();
+      if (hay.indexOf(query) < 0) return false;
+    }
+    return true;
+  }
+
+  function rowHtml(a, showClass) {
+    const d = dueInfo(a);
+    return '<li class="a-row' + (a.done ? ' done' : '') + '" data-id="' + esc(a.id) + '">' +
+      '<input type="checkbox" class="check" ' + (a.done ? 'checked' : '') + ' aria-label="Mark done">' +
+      '<div class="a-main"><div class="a-title">' + esc(a.title) + '</div>' +
+      '<div class="a-meta">' +
+        (showClass ? '<span class="dot" style="background:' + App.colorFor(a.cls) + '"></span>' + esc(a.cls) : '') +
+        (a.kind && a.kind !== 'assignment' && a.kind !== 'item' ? '<span class="badge">' + esc(a.kind) + '</span>' : '') +
+      '</div></div>' +
+      '<div class="a-due ' + d.cls + '">' + esc(d.label) + '</div></li>';
+  }
+
+  function render() {
+    const feed = school.cached();
+    const all = school.list();
+    const shown = all.filter(matches).sort((a, b) => filter === 'done' ? b.dueDate - a.dueDate : a.dueDate - b.dueDate);
+
+    // subtitle
+    if (feed && feed.fetchedAt) {
+      const mins = Math.round((Date.now() - Date.parse(feed.fetchedAt)) / 60000);
+      const upcoming = all.filter(a => !a.done && a.dueDate >= App.startOfDay(new Date())).length;
+      $('sub').textContent = upcoming + ' upcoming · synced ' + (mins < 1 ? 'just now' : mins < 60 ? mins + ' min ago' : App.fmtDay(new Date(feed.fetchedAt)) + ' ' + App.fmtTime(new Date(feed.fetchedAt))) + (feed.source === 'cache' ? ' (saved copy)' : '');
+    } else if (!lastError) {
+      $('sub').textContent = 'Loading assignments…';
+    }
+
+    // banner
+    let banner = '';
+    if (lastError && lastError.offline) {
+      banner = '<div class="banner"><div><b>Schoology sync needs the server.</b> Run <code>npm start</code> (or deploy to Vercel) and add <code>SCHOOLOGY_ICAL_URL</code> (see SETUP.md). Opening the file directly can\'t reach Schoology.</div></div>';
+    } else if (lastError && /SCHOOLOGY_ICAL_URL/.test(lastError.message)) {
+      banner = '<div class="banner"><div><b>Add your Schoology calendar link.</b> In Schoology open <b>Calendar → Export</b>, right-click the export button → <b>Copy link address</b>, and save it in <code>.env</code> as <code>SCHOOLOGY_ICAL_URL</code>. Then restart.</div></div>';
+    } else if (lastError) {
+      banner = '<div class="banner err"><div><b>Couldn\'t refresh from Schoology:</b> ' + esc(lastError.message) + (feed ? ' Showing the last saved copy.' : '') + '</div></div>';
+    } else if (feed && feed.warning) {
+      banner = '<div class="banner"><div>Schoology didn\'t answer just now, so this is the last saved copy. (' + esc(feed.warning) + ')</div></div>';
+    }
+    const unsorted = all.filter(a => a.cls === 'Unsorted' && !a.done).length;
+    if (unsorted && all.length) {
+      banner += '<div class="banner"><div><b>' + unsorted + (unsorted > 1 ? ' assignments have' : ' assignment has') + ' no class.</b> Your feed doesn\'t say which class some items belong to. Open <b>Classes</b> to add a rule like “title contains <i>Chem</i> → Chemistry”, or tap an assignment to move it.</div><button class="btn btn-sm" data-open-classes>Set up classes</button></div>';
+    }
+    $('banner').innerHTML = banner;
+    const oc = $('banner').querySelector('[data-open-classes]');
+    if (oc) oc.onclick = openClasses;
+
+    // class chips
+    const counts = {};
+    all.filter(a => !a.done && a.dueDate >= App.startOfDay(new Date())).forEach(a => counts[a.cls] = (counts[a.cls] || 0) + 1);
+    const classes = Array.from(new Set(all.map(a => a.cls))).sort((a, b) => (a === 'Unsorted') - (b === 'Unsorted') || a.localeCompare(b));
+    $('chips').innerHTML = classes.length < 2 ? '' :
+      '<button class="chip' + (onlyClass ? '' : ' on') + '" data-c="">All classes</button>' +
+      classes.map(c => '<button class="chip' + (onlyClass === c ? ' on' : '') + '" data-c="' + esc(c) + '"><span class="dot" style="background:' + App.colorFor(c) + '"></span>' + esc(c) + (counts[c] ? ' <span class="count">' + counts[c] + '</span>' : '') + '</button>').join('');
+
+    // body
+    if (!all.length) {
+      $('out').innerHTML = feed ? '<div class="card empty">No assignments in your Schoology feed.</div>' :
+        (lastError ? '' : '<div class="card empty">Loading…</div>');
+      return;
+    }
+    if (!shown.length) {
+      $('out').innerHTML = '<div class="card empty">' + ({ upcoming: 'Nothing due. Nice.', overdue: 'Nothing overdue 🎉', done: 'Nothing checked off yet.', all: 'No matches.' }[filter]) + '</div>';
+      return;
+    }
+
+    if (view === 'class') {
+      const groups = {};
+      shown.forEach(a => (groups[a.cls] = groups[a.cls] || []).push(a));
+      const names = Object.keys(groups).sort((a, b) => (a === 'Unsorted') - (b === 'Unsorted') || groups[a][0].dueDate - groups[b][0].dueDate);
+      $('out').innerHTML = '<div class="class-grid">' + names.map(c =>
+        '<div class="card class-card" style="--c:' + App.colorFor(c) + '">' +
+        '<div class="class-card-head"><h3>' + esc(c) + '</h3><span class="mono">' + groups[c].length + '</span></div>' +
+        '<ul>' + groups[c].map(a => rowHtml(a, false)).join('') + '</ul></div>'
+      ).join('') + '</div>';
+    } else {
+      const buckets = [];
+      const byKey = {};
+      shown.forEach(a => {
+        const n = App.dayDiff(a.dueDate);
+        let key, title, sub = '';
+        if (n < 0 && !a.done && filter !== 'done') { key = 'late'; title = 'Overdue'; }
+        else if (n >= 0 && n < 7) { key = App.dkey(a.dueDate); title = App.relDay(a.dueDate); sub = App.fmtDay(a.dueDate, { weekday: undefined }); }
+        else if (n >= 7 && n < 14) { key = 'next'; title = 'Next week'; }
+        else if (n >= 14) { key = 'later'; title = 'Later'; }
+        else { key = App.dkey(a.dueDate); title = App.fmtDay(a.dueDate); }
+        if (!byKey[key]) { byKey[key] = { title, sub, items: [] }; buckets.push(byKey[key]); }
+        byKey[key].items.push(a);
+      });
+      $('out').innerHTML = buckets.map(b =>
+        '<div class="date-group"><div class="date-head"><h3>' + esc(b.title) + '</h3><span>' + esc(b.sub) + ' · ' + b.items.length + '</span></div>' +
+        '<div class="card"><ul style="list-style:none;margin:0;padding:0">' + b.items.map(a => rowHtml(a, true)).join('') + '</ul></div></div>'
+      ).join('');
+    }
+  }
+
+  // ---------- events ----------
+  $('out').addEventListener('click', e => {
+    const row = e.target.closest('.a-row');
+    if (!row) return;
+    const id = row.dataset.id;
+    if (e.target.classList.contains('check')) { school.toggleDone(id, e.target.checked); render(); return; }
+    openDetail(id);
+  });
+  $('chips').addEventListener('click', e => {
+    const b = e.target.closest('.chip'); if (!b) return;
+    onlyClass = b.dataset.c || null; render();
+  });
+  $('viewSeg').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    view = b.dataset.v; localSet('school_view', view);
+    $('viewSeg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    render();
+  });
+  $('filterSeg').addEventListener('click', e => {
+    const b = e.target.closest('button'); if (!b) return;
+    filter = b.dataset.f;
+    $('filterSeg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x === b));
+    render();
+  });
+  $('search').addEventListener('input', e => { query = e.target.value.trim().toLowerCase(); render(); });
+  $('refreshBtn').onclick = () => refresh(true);
+  $('classesBtn').onclick = openClasses;
+  $('viewSeg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.v === view));
+
+  // ---------- detail ----------
+  function openDetail(id) {
+    const a = school.list().find(x => x.id === id);
+    if (!a) return;
+    const classes = Array.from(new Set(school.list().map(x => x.cls).concat(Object.values(school.meta().classNames)))).filter(c => c && c !== 'Unsorted').sort();
+    const d = dueInfo(a);
+    const m = App.modal(
+      '<h2>' + esc(a.title) + '</h2>' +
+      '<div class="row wrap" style="gap:6px;margin-bottom:6px"><span class="badge ' + (d.cls || 'ok') + '">' + esc(d.label) + '</span>' +
+      '<span class="muted" style="font-size:12.5px">' + esc(a.dueDate.toLocaleString([], { dateStyle: 'full', timeStyle: a.allDay ? undefined : 'short' })) + '</span></div>' +
+      (a.description ? '<label>Details</label><div class="detail-desc">' + esc(a.description) + '</div>' : '') +
+      '<label for="mvCls">Class</label>' +
+      '<div class="row"><input id="mvCls" class="input grow" list="clsList" value="' + esc(a.cls === 'Unsorted' ? '' : a.cls) + '" placeholder="Type or pick a class">' +
+      '<datalist id="clsList">' + classes.map(c => '<option value="' + esc(c) + '">').join('') + '</datalist></div>' +
+      '<div class="modal-actions" style="justify-content:space-between">' +
+        '<button class="btn btn-sm btn-ghost btn-danger" data-hide>Hide</button>' +
+        '<div class="row">' + (a.url ? '<a class="btn btn-sm" href="' + esc(a.url) + '" target="_blank" rel="noopener">Open in Schoology ↗</a>' : '') +
+        '<button class="btn btn-sm btn-primary" data-save>Save</button></div>' +
+      '</div>', { noFocus: true });
+    m.el.querySelector('[data-save]').onclick = () => {
+      const meta = school.meta();
+      const v = m.el.querySelector('#mvCls').value.trim();
+      if (v && v !== school.classOf(Object.assign({}, a), Object.assign({}, meta, { overrides: {} }))) meta.overrides[a.id] = v;
+      else delete meta.overrides[a.id];
+      school.saveMeta(meta); m.close(); render();
+    };
+    m.el.querySelector('[data-hide]').onclick = () => {
+      const meta = school.meta(); meta.hidden[a.id] = true; school.saveMeta(meta); m.close(); render();
+      App.toast('Hidden. Unhide it from Classes.');
+    };
+  }
+
+  // ---------- classes & rules ----------
+  function openClasses() {
+    const meta = school.meta();
+    const raw = Array.from(new Set(((school.cached() || {}).assignments || []).map(a => a.course).filter(Boolean))).sort();
+    const hiddenCount = Object.keys(meta.hidden).length;
+    const m = App.modal(
+      '<h2>Classes</h2>' +
+      (raw.length ? '<p class="muted" style="font-size:12.5px;margin:0 0 8px">Rename classes as they come from Schoology:</p>' +
+        raw.map((r, i) => '<div class="names-row"><span class="raw" title="' + esc(r) + '">' + esc(r) + '</span><input class="input" data-raw="' + i + '" value="' + esc(meta.classNames[r] || '') + '" placeholder="' + esc(r) + '"></div>').join('')
+        : '<p class="muted" style="font-size:12.5px;margin:0 0 8px">Your feed doesn\'t include class names, so sort assignments with rules.</p>') +
+      '<label>Rules: if the title contains… put it in…</label><div id="rules"></div>' +
+      '<button class="btn btn-sm" data-add-rule>+ Add rule</button>' +
+      (hiddenCount ? '<p style="margin-top:14px"><button class="btn btn-sm btn-ghost" data-unhide>Unhide ' + hiddenCount + ' hidden item' + (hiddenCount > 1 ? 's' : '') + '</button></p>' : '') +
+      '<div class="modal-actions"><button class="btn btn-ghost" data-x>Cancel</button><button class="btn btn-primary" data-save>Save</button></div>', { noFocus: true });
+    const rulesEl = m.el.querySelector('#rules');
+    function addRule(r) {
+      const div = document.createElement('div');
+      div.className = 'rules-row';
+      div.innerHTML = '<input class="input" placeholder="e.g. Chem" value="' + esc(r.match || '') + '"><input class="input" placeholder="e.g. Chemistry" value="' + esc(r.cls || '') + '"><button class="icon-btn" aria-label="Remove rule">✕</button>';
+      div.querySelector('button').onclick = () => div.remove();
+      rulesEl.appendChild(div);
+    }
+    (meta.rules.length ? meta.rules : [{}]).forEach(addRule);
+    m.el.querySelector('[data-add-rule]').onclick = () => addRule({});
+    m.el.querySelector('[data-x]').onclick = () => m.close();
+    const un = m.el.querySelector('[data-unhide]');
+    if (un) un.onclick = () => { meta.hidden = {}; un.remove(); };
+    m.el.querySelector('[data-save]').onclick = () => {
+      meta.classNames = {};
+      m.el.querySelectorAll('[data-raw]').forEach(inp => { const v = inp.value.trim(); if (v) meta.classNames[raw[+inp.dataset.raw]] = v; });
+      meta.rules = Array.from(rulesEl.children).map(div => {
+        const [a, b] = div.querySelectorAll('input');
+        return { match: a.value.trim(), cls: b.value.trim() };
+      }).filter(r => r.match && r.cls);
+      school.saveMeta(meta); m.close(); render();
+    };
+  }
+
+  // ---------- data ----------
+  async function refresh(force) {
+    $('refreshBtn').disabled = true;
+    try { await school.refresh(force); lastError = null; if (force) App.toast('Assignments updated'); }
+    catch (e) { lastError = e; }
+    $('refreshBtn').disabled = false;
+    render();
+  }
+
+  App.on('school', render);
+  App.on('change', ev => { if (ev.remote && ev.key === 'school_meta') render(); });
+  store.watch(['school_meta']);
+  render();
+  refresh(false);
+  setInterval(() => { if (!document.hidden) refresh(false); }, 10 * 60 * 1000);
+  document.addEventListener('visibilitychange', () => {
+    const feed = school.cached();
+    if (!document.hidden && (!feed || Date.now() - Date.parse(feed.fetchedAt) > 5 * 60 * 1000)) refresh(false);
+  });
+})();
+</script>
+</body>
+</html>

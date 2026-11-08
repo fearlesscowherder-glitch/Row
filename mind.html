@@ -1,0 +1,546 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050506">
+<title>Mind Board</title>
+<link rel="stylesheet" href="app.css">
+<script src="topbar.js" defer></script>
+<script src="app-core.js"></script>
+<style>
+.mind-top { max-width: 760px; margin: 10px auto 18px; text-align: center; }
+.mind-search {
+  width: 100%; border: 0; outline: none; background: transparent;
+  font-family: var(--serif); font-size: clamp(26px, 5vw, 40px); font-style: italic;
+  color: var(--text-primary); text-align: center; padding: 10px 0 8px;
+  border-bottom: 1px solid var(--line);
+}
+.mind-search::placeholder { color: #4a4945; }
+.mind-search:focus { border-bottom-color: rgba(224,118,88,0.5); }
+.filters { display: flex; gap: 6px; flex-wrap: wrap; justify-content: center; margin-top: 14px; }
+.mind-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 12px; }
+.result-count { text-align: center; font-size: 12px; color: var(--text-tertiary); margin: -6px 0 14px; min-height: 16px; }
+
+.masonry { columns: 250px; column-gap: 16px; }
+@media (max-width: 480px) { .masonry { columns: 2; column-gap: 10px; } }
+.tile {
+  break-inside: avoid; margin: 0 0 16px; position: relative;
+  border-radius: 14px; overflow: hidden; cursor: pointer;
+  background: #121214; border: 1px solid rgba(255,255,255,0.05);
+  box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+  transition: transform .18s ease, box-shadow .18s ease, border-color .18s;
+}
+@media (max-width: 480px) { .tile { margin-bottom: 10px; } }
+.tile:hover { transform: translateY(-2px); box-shadow: 0 18px 44px rgba(0,0,0,0.5); border-color: rgba(255,255,255,0.1); }
+.tile img { display: block; width: 100%; height: auto; background: #1a1a1d; min-height: 60px; }
+.tile .t-body { padding: 12px 14px 13px; }
+.tile .t-title { color: var(--text-primary); font-size: 14px; font-weight: 600; line-height: 1.35; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.tile .t-site { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--text-tertiary); margin-top: 6px; }
+.tile .t-site img { width: 13px; height: 13px; min-height: 0; border-radius: 3px; background: none; }
+.tile.note { background: #f4efe4; border-color: transparent; }
+.tile.note .t-note { padding: 16px; color: #24221e; font-family: var(--serif); font-size: 15px; line-height: 1.5; white-space: pre-wrap; word-break: break-word; max-height: 360px; overflow: hidden; -webkit-mask-image: linear-gradient(180deg, #000 80%, transparent); mask-image: linear-gradient(180deg, #000 80%, transparent); }
+.tile.note .t-note b { display: block; font-family: var(--font); font-size: 13px; margin-bottom: 6px; }
+.tile.quote { background: linear-gradient(160deg, #1d1712, #121214); }
+.tile.quote .t-quote { padding: 18px 16px 14px; font-family: var(--serif); font-style: italic; font-size: 17px; line-height: 1.45; color: #f3e9dc; word-break: break-word; }
+.tile.quote .t-quote::before { content: '“'; display: block; font-size: 44px; line-height: .6; color: var(--accent); margin-bottom: 6px; font-style: normal; }
+.tile.quote .t-site { padding: 0 16px 14px; margin: 0; }
+.tile.textlink .t-big { padding: 18px 16px 4px; font-family: var(--serif); font-size: 20px; line-height: 1.25; color: var(--text-primary); word-break: break-word; }
+.tile .play { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -80%); width: 46px; height: 46px; border-radius: 50%; background: rgba(0,0,0,.6); display: grid; place-items: center; color: #fff; font-size: 18px; pointer-events: none; }
+.tile .t-tags { position: absolute; left: 8px; right: 8px; bottom: 8px; display: flex; gap: 4px; flex-wrap: wrap; opacity: 0; transition: opacity .15s; pointer-events: none; }
+.tile:hover .t-tags { opacity: 1; }
+.tile .t-tags span { font-size: 10.5px; padding: 3px 7px; border-radius: 999px; background: rgba(0,0,0,0.72); color: #fff; backdrop-filter: blur(6px); }
+.tile .t-pending { position: absolute; top: 8px; right: 8px; font-size: 10.5px; padding: 3px 8px; border-radius: 999px; background: rgba(0,0,0,0.6); color: var(--warning); }
+
+/* add tile */
+.tile.add { cursor: default; background: rgba(255,255,255,0.03); border: 1px dashed rgba(255,255,255,0.14); box-shadow: none; }
+.tile.add:hover { transform: none; }
+.tile.add.drop { border-color: var(--accent); background: var(--accent-soft); }
+.add-in { width: 100%; border: 0; outline: none; background: transparent; resize: none; color: var(--text-primary); font-family: var(--serif); font-size: 16px; line-height: 1.45; padding: 16px 16px 6px; min-height: 92px; }
+.add-in::placeholder { color: var(--text-tertiary); font-style: italic; }
+.add-bar { display: flex; gap: 6px; align-items: center; padding: 6px 10px 10px; }
+.add-bar .muted { font-size: 11px; flex: 1; }
+@media (max-width: 480px) { .add-bar .muted { visibility: hidden; } }
+
+/* detail */
+.detail { display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr); gap: 18px; }
+@media (max-width: 700px) { .detail { grid-template-columns: 1fr; } }
+.d-preview { border-radius: 12px; overflow: hidden; background: #0c0c0e; display: grid; place-items: center; min-height: 160px; }
+.d-preview img { display: block; max-width: 100%; max-height: 70vh; }
+.d-preview textarea { width: 100%; min-height: 320px; border: 0; outline: none; resize: vertical; background: #f4efe4; color: #24221e; font-family: var(--serif); font-size: 16px; line-height: 1.55; padding: 18px; }
+.d-preview .q { padding: 26px 22px; font-family: var(--serif); font-style: italic; font-size: 20px; line-height: 1.45; color: #f3e9dc; }
+.d-title { width: 100%; border: 0; outline: none; background: transparent; color: var(--text-primary); font-size: 19px; font-weight: 700; letter-spacing: -0.01em; padding: 0; }
+.d-sec { margin-top: 14px; }
+.d-sec h4 { margin: 0 0 6px; font-size: 10.5px; font-weight: 700; letter-spacing: .16em; text-transform: uppercase; color: var(--text-tertiary); }
+.tag-edit { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.tag-edit .chip { cursor: default; }
+.tag-edit .chip button { border: 0; background: none; color: var(--text-tertiary); cursor: pointer; padding: 0; font-size: 11px; }
+.tag-edit input { border: 0; outline: none; background: transparent; color: var(--text-primary); font-size: 12.5px; width: 90px; }
+.d-summary { font-size: 13.5px; line-height: 1.5; color: var(--text-secondary); }
+.d-link { font-size: 12.5px; color: var(--accent); word-break: break-all; text-decoration: none; }
+.space-list { display: flex; gap: 6px; flex-wrap: wrap; }
+.bm { display: inline-block; padding: 9px 14px; border-radius: 10px; background: var(--accent); color: #0A0A0B; font-weight: 700; text-decoration: none; font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="mind-top">
+    <input class="mind-search" id="q" type="search" placeholder="Search my mind…" autocomplete="off" aria-label="Search">
+    <div class="filters" id="filters"></div>
+    <div class="mind-actions">
+      <span id="sync"></span>
+      <button class="btn btn-sm btn-ghost" id="surprise">✦ Surprise me</button>
+      <button class="btn btn-sm btn-ghost" id="newSpace">+ Space</button>
+      <button class="btn btn-sm btn-ghost" id="bookmarklet">Save from anywhere</button>
+    </div>
+  </div>
+  <div class="result-count" id="count"></div>
+  <div class="masonry" id="grid"></div>
+  <input type="file" id="file" accept="image/*" multiple hidden>
+</div>
+
+<script>
+(function () {
+  'use strict';
+  const { esc, store, uid } = App;
+  const $ = id => document.getElementById(id);
+  const TYPES = [
+    { id: 'all', label: 'Everything' },
+    { id: 'link', label: 'Links' },
+    { id: 'image', label: 'Images' },
+    { id: 'note', label: 'Notes' },
+    { id: 'quote', label: 'Quotes' },
+    { id: 'video', label: 'Videos' },
+  ];
+  const COLOR_WORDS = ['red', 'orange', 'yellow', 'green', 'blue', 'purple', 'pink', 'brown', 'black', 'white', 'gray', 'grey'];
+  let typeFilter = 'all';
+  let spaceFilter = null;
+  let query = '';
+  const blobCache = {};
+
+  App.syncPill($('sync'));
+
+  function data() {
+    const d = store.get('mind', null);
+    return d && Array.isArray(d.items) ? d : { items: [], spaces: [] };
+  }
+  function save(d, rerender) { store.set('mind', d); if (rerender !== false) render(); }
+  function findItem(d, id) { return d.items.find(i => i.id === id); }
+
+  function youtubeId(url) {
+    const m = (url || '').match(/(?:youtube\.com\/(?:watch\?v=|shorts\/|embed\/)|youtu\.be\/)([\w-]{11})/);
+    return m ? m[1] : null;
+  }
+  function isVideo(it) { return it.kind === 'video' || !!youtubeId(it.url) || /vimeo\.com|tiktok\.com/.test(it.url || ''); }
+  function domainOf(url) { try { return new URL(url).hostname.replace(/^www\./, ''); } catch (e) { return ''; } }
+
+  // ---------- search ----------
+  function matches(it, q) {
+    if (typeFilter === 'video' && !isVideo(it)) return false;
+    if (typeFilter !== 'all' && typeFilter !== 'video' && it.type !== typeFilter) return false;
+    if (spaceFilter) {
+      const sp = data().spaces.find(s => s.id === spaceFilter);
+      if (sp && sp.query) { if (!textMatch(it, sp.query.toLowerCase())) return false; }
+      else if (!(it.spaces || []).includes(spaceFilter)) return false;
+    }
+    return !q || textMatch(it, q);
+  }
+  function textMatch(it, q) {
+    const hay = [it.title, it.text, it.description, it.summary, it.notes, it.domain, it.kind, it.type, (it.tags || []).join(' '), (it.colors || []).join(' ')].join(' ').toLowerCase();
+    return q.split(/\s+/).filter(Boolean).every(tok => {
+      if (tok[0] === '#') return (it.tags || []).some(t => t === tok.slice(1));
+      const typeWord = { images: 'image', image: 'image', photos: 'image', notes: 'note', note: 'note', links: 'link', quotes: 'quote', quote: 'quote', videos: 'video', video: 'video' }[tok];
+      if (typeWord) return typeWord === 'video' ? isVideo(it) : (it.type === typeWord || it.kind === typeWord);
+      if (COLOR_WORDS.includes(tok) && it.type === 'image') return (it.colors || []).includes(tok === 'grey' ? 'gray' : tok) || hay.includes(tok);
+      return hay.includes(tok);
+    });
+  }
+
+  // ---------- render ----------
+  function renderFilters() {
+    const d = data();
+    $('filters').innerHTML =
+      TYPES.map(t => '<button class="chip' + (typeFilter === t.id && !spaceFilter ? ' on' : '') + '" data-type="' + t.id + '">' + t.label + '</button>').join('') +
+      d.spaces.map(s => '<button class="chip' + (spaceFilter === s.id ? ' on' : '') + '" data-space="' + s.id + '">' + (s.query ? '⌕ ' : '◇ ') + esc(s.name) + '</button>').join('');
+  }
+
+  function tileHtml(it) {
+    const tags = (it.tags || []).slice(0, 4).map(t => '<span>' + esc(t) + '</span>').join('');
+    const pending = it.aiPending ? '<span class="t-pending">tagging…</span>' : '';
+    const fav = it.favicon ? '<img src="' + esc(it.favicon) + '" alt="" loading="lazy" onerror="this.remove()">' : '';
+    const site = '<div class="t-site">' + fav + esc(it.domain || '') + '</div>';
+    if (it.type === 'image') {
+      return '<div class="tile" data-id="' + it.id + '"><img data-blob="mind_img:' + it.id + ':thumb" alt="' + esc(it.title || 'Saved image') + '" style="aspect-ratio:' + (it.w && it.h ? it.w + '/' + it.h : '4/3') + '"><div class="t-tags">' + tags + '</div>' + pending + '</div>';
+    }
+    if (it.type === 'note') {
+      return '<div class="tile note" data-id="' + it.id + '"><div class="t-note">' + (it.title && it.title !== firstLine(it.text) ? '<b>' + esc(it.title) + '</b>' : '') + esc((it.text || '').slice(0, 900)) + '</div><div class="t-tags">' + tags + '</div>' + pending + '</div>';
+    }
+    if (it.type === 'quote') {
+      return '<div class="tile quote" data-id="' + it.id + '"><div class="t-quote">' + esc((it.text || '').slice(0, 600)) + '</div>' +
+        (it.author ? '<div class="t-site" style="padding:0 16px 14px;margin:0">— ' + esc(it.author) + '</div>' : '') + (it.domain ? site : '') + '<div class="t-tags">' + tags + '</div>' + pending + '</div>';
+    }
+    // link
+    const yt = youtubeId(it.url);
+    const img = it.image || (yt ? 'https://i.ytimg.com/vi/' + yt + '/hqdefault.jpg' : '');
+    if (img) {
+      return '<div class="tile" data-id="' + it.id + '"><img src="' + esc(img) + '" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">' + (isVideo(it) ? '<span class="play">▶</span>' : '') +
+        '<div class="t-body"><div class="t-title">' + esc(it.title || it.url) + '</div>' + site + '</div><div class="t-tags">' + tags + '</div>' + pending + '</div>';
+    }
+    return '<div class="tile textlink" data-id="' + it.id + '"><div class="t-big">' + esc(it.title || it.url) + '</div><div class="t-body" style="padding-top:6px">' + site + '</div><div class="t-tags">' + tags + '</div>' + pending + '</div>';
+  }
+  function firstLine(s) { return (s || '').split('\n')[0].slice(0, 80); }
+
+  const addTile =
+    '<div class="tile add" id="addTile">' +
+    '<textarea class="add-in" id="addIn" rows="3" placeholder="Paste a link, write a note, or drop an image…"></textarea>' +
+    '<div class="add-bar"><span class="muted">Enter to save · Shift+Enter for a new line</span>' +
+    '<button class="icon-btn" id="pickImg" title="Add an image" aria-label="Add an image">🖼</button>' +
+    '<button class="btn btn-sm" id="saveBtn">Save</button></div></div>';
+
+  function render() {
+    renderFilters();
+    const d = data();
+    const q = query.toLowerCase();
+    const items = d.items.filter(it => matches(it, q)).sort((a, b) => b.created - a.created);
+    const keepDraft = $('addIn') ? $('addIn').value : '';
+    const hadFocus = document.activeElement && document.activeElement.id === 'addIn';
+    $('grid').innerHTML = addTile + items.map(tileHtml).join('');
+    $('addIn').value = keepDraft;
+    if (hadFocus) $('addIn').focus();
+    wireAdd();
+    $('count').textContent = (q || typeFilter !== 'all' || spaceFilter) ? items.length + ' of ' + d.items.length : (d.items.length ? d.items.length + ' saved' : '');
+    if (!d.items.length) {
+      $('grid').insertAdjacentHTML('beforeend', '<div class="tile" style="cursor:default;padding:18px;font-size:13px;line-height:1.55;color:var(--text-secondary)"><b style="color:var(--text-primary)">Your mind, saved.</b><br>Paste links to articles, videos or products, jot notes, drop screenshots and photos. Everything is tagged automatically so you can find it by searching for what it <i>is</i>, like “recipes”, “blue”, “shoes” or “physics”.</div>');
+    }
+    loadBlobs();
+  }
+
+  // Images live in IndexedDB + the server, loaded only when visible.
+  let io = null;
+  function loadBlobs() {
+    if (io) io.disconnect();
+    io = new IntersectionObserver(entries => entries.forEach(en => {
+      if (!en.isIntersecting) return;
+      const img = en.target; io.unobserve(img);
+      const key = img.dataset.blob;
+      if (blobCache[key]) { img.src = blobCache[key]; return; }
+      store.getBlob(key).then(v => {
+        if (!v) { const full = key.replace(':thumb', ':full'); return store.getBlob(full).then(f => { if (f) img.src = f; }); }
+        blobCache[key] = v; img.src = v;
+      });
+    }), { rootMargin: '400px' });
+    document.querySelectorAll('img[data-blob]').forEach(img => io.observe(img));
+  }
+
+  // ---------- add ----------
+  function wireAdd() {
+    const input = $('addIn');
+    input.addEventListener('keydown', e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); addFromText(input.value); } });
+    $('saveBtn').onclick = () => addFromText(input.value);
+    $('pickImg').onclick = () => $('file').click();
+  }
+  $('file').addEventListener('change', e => { Array.from(e.target.files || []).forEach(addImage); e.target.value = ''; });
+
+  function addFromText(raw, extra) {
+    const text = (raw || '').trim();
+    if (!text) return;
+    const d = data();
+    const urlOnly = /^https?:\/\/\S+$/i.test(text);
+    let it;
+    if (urlOnly) {
+      it = { id: uid(), type: 'link', url: text, domain: domainOf(text), title: domainOf(text), tags: [], created: Date.now() };
+      if (youtubeId(text)) it.kind = 'video';
+    } else if (/^["“][\s\S]+?["”]\s*(?:[—–-]+\s*[^\n]{1,80})?$/.test(text) || (extra && extra.quote)) {
+      // "Quote text" — Author   (the attribution is optional)
+      const m = text.match(/^["“]([\s\S]+?)["”]\s*(?:[—–-]+\s*([^\n]{1,80}))?$/);
+      it = { id: uid(), type: 'quote', text: m ? m[1].trim() : text, author: m && m[2] ? m[2].trim() : '', tags: [], created: Date.now() };
+      if (it.author) it.title = it.author;
+    } else {
+      it = { id: uid(), type: 'note', text, title: firstLine(text), tags: [], created: Date.now() };
+    }
+    if (extra) Object.assign(it, extra.fields || {});
+    it.aiPending = App.serverAvailable;
+    d.items.push(it);
+    save(d);
+    if ($('addIn')) $('addIn').value = '';
+    enrich(it.id);
+  }
+
+  async function enrich(id) {
+    let it = findItem(data(), id);
+    if (!it) return;
+    if (it.type === 'link' || (it.url && it.type === 'quote')) {
+      try {
+        const u = await App.api('/api/unfurl?url=' + encodeURIComponent(it.url), { noPrompt: true });
+        const d = data(); it = findItem(d, id); if (!it) return;
+        if (it.type === 'link') Object.assign(it, { title: u.title || it.title, description: u.description, image: u.image, favicon: u.favicon, domain: domainOf(u.url) || it.domain, siteName: u.siteName });
+        else Object.assign(it, { favicon: u.favicon, domain: domainOf(u.url) || it.domain, title: it.title || u.title });
+        save(d);
+      } catch (e) {}
+    }
+    await tag(id);
+  }
+
+  async function tag(id, imageData) {
+    const d0 = data(); const it0 = findItem(d0, id); if (!it0) return;
+    try {
+      const out = await App.api('/api/ai', { method: 'POST', noPrompt: true, body: { task: 'tag', item: {
+        type: it0.type, title: it0.title, text: it0.text, url: it0.url, description: it0.description, siteName: it0.siteName, image: imageData,
+      } } });
+      const d = data(); const it = findItem(d, id); if (!it) return;
+      const manual = (it.tags || []).filter(t => !(it.aiTags || []).includes(t));
+      it.aiTags = out.tags;
+      it.tags = Array.from(new Set(manual.concat(out.tags)));
+      it.summary = out.summary;
+      it.kind = it.kind || out.kind;
+      if (out.colors && out.colors.length) it.colors = out.colors.map(c => c.toLowerCase());
+      if (it.type === 'image' && (!it.title || it.title === 'Image')) it.title = out.title;
+      if (it.type === 'link' && (!it.title || it.title === it.domain)) it.title = out.title;
+      it.aiPending = false;
+      save(d);
+    } catch (e) {
+      const d = data(); const it = findItem(d, id); if (!it) return;
+      it.aiPending = false; save(d);
+      if (!e.offline && e.status !== 401) console.warn('Tagging failed:', e.message);
+    }
+  }
+
+  function loadImage(file) {
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = () => { URL.revokeObjectURL(url); res(img); };
+      img.onerror = rej;
+      img.src = url;
+    });
+  }
+  function shrink(img, max, quality) {
+    const s = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement('canvas');
+    c.width = Math.round(img.naturalWidth * s); c.height = Math.round(img.naturalHeight * s);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height);
+    ctx.drawImage(img, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', quality);
+  }
+  async function imageForAi(id) {
+    const full = await store.getBlob('mind_img:' + id + ':full');
+    if (!full) return undefined;
+    const im = new Image(); im.src = full;
+    try { await im.decode(); } catch (e) { return undefined; }
+    return shrink(im, 768, 0.75);
+  }
+  async function addImage(file) {
+    if (!file || !/^image\//.test(file.type)) return;
+    let img;
+    try { img = await loadImage(file); } catch (e) { App.toast('Could not read that image', true); return; }
+    const id = uid();
+    const full = shrink(img, 1600, 0.82), thumb = shrink(img, 520, 0.78), forAi = shrink(img, 768, 0.75);
+    blobCache['mind_img:' + id + ':thumb'] = thumb;
+    await store.setBlob('mind_img:' + id + ':thumb', thumb);
+    store.setBlob('mind_img:' + id + ':full', full);
+    const d = data();
+    d.items.push({ id, type: 'image', kind: 'image', title: (file.name || '').replace(/\.[a-z]+$/i, '').replace(/^(IMG|Screenshot|image)[\s_-]*/i, '') || 'Image', w: img.naturalWidth, h: img.naturalHeight, tags: [], created: Date.now(), aiPending: App.serverAvailable });
+    save(d);
+    tag(id, forAi);
+  }
+
+  // paste + drag & drop anywhere on the page
+  document.addEventListener('paste', e => {
+    const files = Array.from((e.clipboardData && e.clipboardData.files) || []).filter(f => /^image\//.test(f.type));
+    if (files.length) { e.preventDefault(); files.forEach(addImage); return; }
+    const a = document.activeElement;
+    if (a && /^(INPUT|TEXTAREA)$/.test(a.tagName)) return;
+    const text = e.clipboardData && e.clipboardData.getData('text');
+    if (text) { e.preventDefault(); addFromText(text); }
+  });
+  document.addEventListener('dragover', e => { e.preventDefault(); const t = $('addTile'); if (t) t.classList.add('drop'); });
+  document.addEventListener('dragleave', e => { if (!e.relatedTarget) { const t = $('addTile'); if (t) t.classList.remove('drop'); } });
+  document.addEventListener('drop', e => {
+    e.preventDefault();
+    const t = $('addTile'); if (t) t.classList.remove('drop');
+    const files = Array.from(e.dataTransfer.files || []).filter(f => /^image\//.test(f.type));
+    if (files.length) return files.forEach(addImage);
+    const text = e.dataTransfer.getData('text/uri-list') || e.dataTransfer.getData('text');
+    if (text) addFromText(text.split('\n')[0]);
+  });
+
+  // ---------- detail ----------
+  $('grid').addEventListener('click', e => {
+    const t = e.target.closest('.tile[data-id]'); if (t) openDetail(t.dataset.id);
+  });
+
+  function openDetail(id) {
+    const d = data(); const it = findItem(d, id); if (!it) return;
+    let preview;
+    if (it.type === 'image') preview = '<img id="dImg" alt="">';
+    else if (it.type === 'note') preview = '<textarea id="dText">' + esc(it.text || '') + '</textarea>';
+    else if (it.type === 'quote') preview = '<div class="q" contenteditable="true" id="dQuote">' + esc(it.text || '') + '</div>';
+    else {
+      const yt = youtubeId(it.url);
+      preview = yt ? '<iframe style="width:100%;aspect-ratio:16/9;border:0" src="https://www.youtube-nocookie.com/embed/' + yt + '" allow="encrypted-media; picture-in-picture" allowfullscreen></iframe>'
+        : (it.image ? '<img src="' + esc(it.image) + '" alt="" referrerpolicy="no-referrer">' : '<div class="q" style="font-style:normal">' + esc(it.title || it.url) + '</div>');
+    }
+    const spaces = d.spaces.filter(s => !s.query);
+    const m = App.modal(
+      '<div class="detail"><div class="d-preview">' + preview + '</div><div>' +
+      '<input class="d-title" id="dTitle" value="' + esc(it.title || '') + '" placeholder="Untitled">' +
+      (it.url ? '<div style="margin-top:6px"><a class="d-link" href="' + esc(it.url) + '" target="_blank" rel="noopener">' + esc(it.domain || it.url) + ' ↗</a></div>' : '') +
+      (it.summary || it.description ? '<div class="d-sec"><h4>About</h4><div class="d-summary">' + esc(it.summary || it.description) + '</div></div>' : '') +
+      '<div class="d-sec"><h4>Tags</h4><div class="tag-edit" id="dTags"></div></div>' +
+      '<div class="d-sec"><h4>Spaces</h4><div class="space-list" id="dSpaces">' +
+        (spaces.length ? spaces.map(s => '<button class="chip' + ((it.spaces || []).includes(s.id) ? ' on' : '') + '" data-sp="' + s.id + '">◇ ' + esc(s.name) + '</button>').join('') : '<span class="muted" style="font-size:12.5px">No spaces yet. Make one with + Space.</span>') +
+      '</div></div>' +
+      '<div class="d-sec"><h4>My notes</h4><textarea class="textarea" id="dNotes" rows="3" placeholder="Why did you save this?">' + esc(it.notes || '') + '</textarea></div>' +
+      '<div class="d-sec muted" style="font-size:11.5px">Saved ' + esc(new Date(it.created).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' })) + '</div>' +
+      '<div class="modal-actions" style="justify-content:space-between"><button class="btn btn-sm btn-ghost btn-danger" data-del>Delete</button>' +
+      '<div class="row"><button class="btn btn-sm" data-retag>✨ Re-tag</button><button class="btn btn-sm btn-primary" data-done>Done</button></div></div>' +
+      '</div></div>', { wide: true, noFocus: true, onClose: commit });
+
+    const q = s => m.el.querySelector(s);
+    if (it.type === 'image') {
+      const key = 'mind_img:' + it.id;
+      store.getBlob(key + ':full').then(v => { if (v) q('#dImg').src = v; else if (blobCache[key + ':thumb']) q('#dImg').src = blobCache[key + ':thumb']; });
+    }
+    let tags = (it.tags || []).slice();
+    function drawTags() {
+      q('#dTags').innerHTML = tags.map((t, i) => '<span class="chip">' + esc(t) + ' <button data-rm="' + i + '" aria-label="Remove tag">✕</button></span>').join('') + '<input id="dTagIn" placeholder="+ add tag">';
+      const inp = q('#dTagIn');
+      inp.addEventListener('keydown', e => {
+        if ((e.key === 'Enter' || e.key === ',') && inp.value.trim()) { e.preventDefault(); tags.push(inp.value.trim().toLowerCase().replace(/^#/, '')); tags = Array.from(new Set(tags)); drawTags(); q('#dTagIn').focus(); }
+      });
+    }
+    drawTags();
+    q('#dTags').addEventListener('click', e => { const b = e.target.closest('[data-rm]'); if (b) { tags.splice(+b.dataset.rm, 1); drawTags(); } });
+    let itemSpaces = (it.spaces || []).slice();
+    q('#dSpaces').addEventListener('click', e => {
+      const b = e.target.closest('[data-sp]'); if (!b) return;
+      const sid = b.dataset.sp;
+      itemSpaces = itemSpaces.includes(sid) ? itemSpaces.filter(x => x !== sid) : itemSpaces.concat(sid);
+      b.classList.toggle('on');
+    });
+
+    let deleted = false;
+    function commit() {
+      if (deleted) return;
+      const dd = data(); const cur = findItem(dd, id); if (!cur) return;
+      cur.title = q('#dTitle').value.trim();
+      cur.notes = q('#dNotes').value;
+      cur.tags = tags; cur.spaces = itemSpaces;
+      if (q('#dText')) { cur.text = q('#dText').value; if (!cur.title) cur.title = firstLine(cur.text); }
+      if (q('#dQuote')) cur.text = q('#dQuote').innerText.trim();
+      cur.updated = Date.now();
+      save(dd);
+    }
+    q('[data-done]').onclick = () => m.close();
+    q('[data-retag]').onclick = async () => {
+      commit(); deleted = true; m.close();
+      const dd = data(); const cur = findItem(dd, id); cur.aiPending = true; save(dd);
+      await tag(id, cur.type === 'image' ? await imageForAi(id) : undefined);
+      App.toast('Re-tagged');
+    };
+    q('[data-del]').onclick = () => {
+      if (!confirm('Delete this from your mind?')) return;
+      deleted = true;
+      const dd = data(); dd.items = dd.items.filter(x => x.id !== id); save(dd);
+      if (it.type === 'image') { store.delBlob('mind_img:' + id + ':thumb'); store.delBlob('mind_img:' + id + ':full'); }
+      m.close();
+    };
+  }
+
+  // ---------- filters, spaces, surprise ----------
+  $('filters').addEventListener('click', e => {
+    const b = e.target.closest('.chip'); if (!b) return;
+    if (b.dataset.space) { spaceFilter = spaceFilter === b.dataset.space ? null : b.dataset.space; typeFilter = 'all'; }
+    else { typeFilter = b.dataset.type; spaceFilter = null; }
+    render();
+  });
+  $('filters').addEventListener('contextmenu', e => {
+    const b = e.target.closest('[data-space]'); if (!b) return;
+    e.preventDefault(); editSpace(b.dataset.space);
+  });
+  let searchT;
+  $('q').addEventListener('input', e => { clearTimeout(searchT); searchT = setTimeout(() => { query = e.target.value.trim(); render(); }, 120); });
+  $('newSpace').onclick = () => editSpace(null);
+
+  function editSpace(id) {
+    const d = data();
+    const sp = id ? d.spaces.find(s => s.id === id) : null;
+    const m = App.modal('<h2>' + (sp ? 'Edit space' : 'New space') + '</h2>' +
+      '<label for="spN">Name</label><input id="spN" class="input" value="' + esc(sp ? sp.name : '') + '" placeholder="Room ideas">' +
+      '<label for="spQ">Smart space (optional)</label><input id="spQ" class="input" value="' + esc(sp && sp.query ? sp.query : (query && !sp ? query : '')) + '" placeholder="e.g. recipes  or  #design blue">' +
+      '<p class="muted" style="font-size:12px;line-height:1.5;margin:6px 0 0">Leave it empty to add things by hand from each card. With a search, the space fills itself with everything that matches.</p>' +
+      '<div class="modal-actions" style="justify-content:space-between">' + (sp ? '<button class="btn btn-sm btn-ghost btn-danger" data-del>Delete space</button>' : '<span></span>') +
+      '<div class="row"><button class="btn btn-ghost" data-x>Cancel</button><button class="btn btn-primary" data-ok>Save</button></div></div>');
+    const q = s => m.el.querySelector(s);
+    q('[data-x]').onclick = () => m.close();
+    if (sp) q('[data-del]').onclick = () => {
+      d.spaces = d.spaces.filter(s => s.id !== sp.id);
+      d.items.forEach(i => { if (i.spaces) i.spaces = i.spaces.filter(x => x !== sp.id); });
+      if (spaceFilter === sp.id) spaceFilter = null;
+      save(d); m.close();
+    };
+    q('[data-ok]').onclick = () => {
+      const name = q('#spN').value.trim(); if (!name) return q('#spN').focus();
+      if (sp) { sp.name = name; sp.query = q('#spQ').value.trim(); }
+      else { const s = { id: uid(), name, query: q('#spQ').value.trim() }; d.spaces.push(s); spaceFilter = s.id; }
+      save(d); m.close();
+    };
+  }
+
+  $('surprise').onclick = () => {
+    const items = data().items;
+    if (!items.length) return App.toast('Save a few things first');
+    openDetail(items[Math.floor(Math.random() * items.length)].id);
+  };
+
+  $('bookmarklet').onclick = () => {
+    const base = location.origin + location.pathname;
+    const code = "javascript:(function(){var s=String(getSelection()||'');window.open('" + base + "?save='+encodeURIComponent(location.href)+'&title='+encodeURIComponent(document.title)+(s?'&quote='+encodeURIComponent(s.slice(0,2000)):''),'_blank');})()";
+    const m = App.modal('<h2>Save from anywhere</h2>' +
+      '<p style="font-size:13px;line-height:1.55;margin:0 0 12px">Drag this button to your bookmarks bar. On any website, click it to save the page here. Highlight text first to save it as a quote.</p>' +
+      '<p><a class="bm" id="bmLink">＋ Save to Mind</a></p>' +
+      '<p class="muted" style="font-size:12px;line-height:1.5">On a phone, copy a link and paste it into the box at the top of this page.</p>' +
+      '<div class="modal-actions"><button class="btn btn-primary" data-x>Got it</button></div>', { noFocus: true });
+    m.el.querySelector('#bmLink').setAttribute('href', code);
+    m.el.querySelector('#bmLink').onclick = e => { e.preventDefault(); App.toast('Drag the button to your bookmarks bar'); };
+    m.el.querySelector('[data-x]').onclick = () => m.close();
+  };
+
+  // ?save=URL&title=...&quote=... (from the bookmarklet)
+  (function handleIncoming() {
+    const p = new URLSearchParams(location.search);
+    const url = p.get('save');
+    if (!url) return;
+    history.replaceState(null, '', location.pathname);
+    const quote = p.get('quote');
+    if (quote) addFromText(quote, { quote: true, fields: { url, domain: domainOf(url), title: p.get('title') || '' } });
+    else {
+      addFromText(url);
+      const d = data(); const it = d.items[d.items.length - 1];
+      if (it && p.get('title')) { it.title = p.get('title'); save(d); }
+    }
+    App.toast('Saved to your mind');
+  })();
+
+  App.on('change', ev => {
+    if (ev.key !== 'mind' || !ev.remote) return;
+    const a = document.activeElement;
+    if (document.querySelector('.modal-back') || (a && a.id === 'addIn' && a.value)) return; // don't disrupt editing
+    render();
+  });
+  store.watch(['mind']);
+  render();
+
+  // Retry tagging for anything still waiting (e.g. saved offline).
+  setTimeout(() => {
+    if (!App.serverAvailable) return;
+    data().items.filter(i => i.aiPending || ((!i.tags || !i.tags.length) && !i.aiTried)).slice(0, 5).forEach(async i => {
+      const d = data(); const cur = findItem(d, i.id); cur.aiTried = true; save(d, false);
+      tag(i.id, i.type === 'image' ? await imageForAi(i.id) : undefined);
+    });
+  }, 4000);
+})();
+</script>
+</body>
+</html>

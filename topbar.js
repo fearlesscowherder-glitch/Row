@@ -21,7 +21,7 @@
   const css = `
 .topbar {
   position: sticky; top: 0; z-index: 40;
-  display: flex; gap: 6px;
+  display: flex; flex-wrap: wrap; gap: 6px;
   padding: max(10px, env(safe-area-inset-top)) 14px 10px;
   /* Fully opaque so each page's body background can't bleed through
      and tint the bar a different color. Matches the dashboard's base
@@ -109,14 +109,36 @@
   background: linear-gradient(180deg, rgba(125, 211, 252, 0.65), rgba(110, 231, 183, 0.65));
 }
 
+.topbar-nav {
+  flex: 1 0 100%;
+  display: flex; gap: 2px;
+  overflow-x: auto; scrollbar-width: none;
+  margin-top: 2px;
+}
+.topbar-nav::-webkit-scrollbar { display: none; }
+.topbar-nav a {
+  flex: 1 0 auto;
+  text-align: center;
+  padding: 7px 10px;
+  border-radius: 9px;
+  font-size: 12.5px; font-weight: 600;
+  color: rgba(255, 255, 255, 0.5);
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: background 0.15s, color 0.15s;
+}
+.topbar-nav a:hover { background: rgba(255, 255, 255, 0.05); color: #FAFAFA; }
+.topbar-nav a.on { background: rgba(255, 255, 255, 0.08); color: #FAFAFA; }
+
 @media (max-width: 480px) {
+  .topbar-nav a { padding: 7px 8px; font-size: 12px; }
   .topbar { padding-left: 10px; padding-right: 10px; gap: 4px; }
   .topbar-pill, .topbar-water-pill { padding: 7px 9px; gap: 5px; }
   .topbar-pill-label { font-size: 9px; letter-spacing: 0.10em; }
   .topbar-pill-count { font-size: 11px; }
   .topbar-water-add { width: 32px; font-size: 16px; }
 }
-@media (max-width: 380px) {
+@media (max-width: 440px) {
   .topbar-pill-label { display: none; }
 }
 
@@ -195,6 +217,14 @@ body.topbar-modal-open {
     <span class="topbar-pill-dot"></span>
     <span class="topbar-pill-label">FINANCE</span>
   </a>
+  <nav class="topbar-nav" aria-label="Pages">
+    <a href="index.html" data-page="index">Today</a>
+    <a href="school.html" data-page="school">School</a>
+    <a href="calendar.html" data-page="calendar">Calendar</a>
+    <a href="lists.html" data-page="lists">Lists</a>
+    <a href="mind.html" data-page="mind">Mind</a>
+    <a href="gym.html" data-page="gym">Workouts</a>
+  </nav>
 </header>
 `;
 
@@ -208,6 +238,11 @@ body.topbar-modal-open {
     const wrap = document.createElement('div');
     wrap.innerHTML = html.trim();
     document.body.insertBefore(wrap.firstChild, document.body.firstChild);
+
+    // Highlight the current page in the nav row.
+    const page = (location.pathname.split('/').pop() || 'index.html').replace(/\.html$/, '') || 'index';
+    const link = document.querySelector('.topbar-nav a[data-page="' + page + '"]');
+    if (link) link.classList.add('on');
   }
 
   // -------- Active-date helpers (match the goals page 6 AM rollover) --------

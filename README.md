@@ -14,14 +14,20 @@ Open any `.html` file directly in your browser — no build step, no install.
 
 | File | What it is |
 |---|---|
-| [index.html](index.html) | Goals tracker (Day Ring, Goal Ticker, To Do list) — the home page |
+| [index.html](index.html) | Today: due-soon assignments, today's schedule, workout status, Day Ring, daily To Do list |
+| [school.html](school.html) | Schoology assignments, by class or by date, with done checkboxes |
+| [calendar.html](calendar.html) | Month calendar + agenda: school, Gmail events, your events, list due dates, workouts |
+| [lists.html](lists.html) | Sticky-note style checklists and notes |
+| [mind.html](mind.html) | Save links, notes, quotes and images; auto-tagged and searchable |
 | [health.html](health.html) | Supplement / daily stack tracker |
 | [po-water.html](po-water.html) | Water intake tracker |
 | [finance.html](finance.html) | Finances |
 | [gym.html](gym.html) | Progressive overload gym tracker |
-| [topbar.js](topbar.js) | Shared top bar — auto-injected into pages that `<script src="topbar.js">` |
+| [topbar.js](topbar.js) | Shared top bar + page nav |
+| [app-core.js](app-core.js) / [app.css](app.css) | Shared sync, helpers and styles |
+| [api/](api/) | Vercel serverless functions: Schoology feed, Gmail → calendar, Claude tagging, sync storage |
 
-Each app stores its own state in browser `localStorage`. No accounts, no server.
+Opened as plain files, every page works and saves to that browser only. Deployed on Vercel with the settings in **[SETUP.md](SETUP.md)**, you get Schoology sync, Gmail → calendar, AI tagging, and sync across devices.
 
 ## Building from scratch
 

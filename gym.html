@@ -3466,5 +3466,8 @@ img, video, canvas, svg { max-width: 100%; }
 })();
 </script>
 
+<!-- Sync this page across devices through the dashboard server (see SETUP.md). -->
+<script src="app-core.js"></script>
+<script>window.App && App.mirror("gym", function (k) { return /^po_coach_/.test(k) && k !== "po_coach_photos"; });</script>
 </body>
 </html>
