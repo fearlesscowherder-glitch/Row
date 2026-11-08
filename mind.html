@@ -46,6 +46,7 @@
 .tile.quote .t-quote::before { content: '“'; display: block; font-size: 44px; line-height: .6; color: var(--accent); margin-bottom: 6px; font-style: normal; }
 .tile.quote .t-site { padding: 0 16px 14px; margin: 0; }
 .tile.textlink .t-big { padding: 18px 16px 4px; font-family: var(--serif); font-size: 20px; line-height: 1.25; color: var(--text-primary); word-break: break-word; }
+.tile .t-price { position: absolute; top: 10px; right: 10px; padding: 3px 8px; border-radius: 6px; background: rgba(0,0,0,.72); color: #fff; font-size: 12px; font-weight: 600; pointer-events: none; }
 .tile .play { position: absolute; top: 50%; left: 50%; transform: translate(-50%, -80%); width: 46px; height: 46px; border-radius: 50%; background: rgba(0,0,0,.6); display: grid; place-items: center; color: #fff; font-size: 18px; pointer-events: none; }
 .tile .t-tags { position: absolute; left: 8px; right: 8px; bottom: 8px; display: flex; gap: 4px; flex-wrap: wrap; opacity: 0; transition: opacity .15s; pointer-events: none; }
 .tile:hover .t-tags { opacity: 1; }
@@ -146,7 +147,7 @@
     return !q || textMatch(it, q);
   }
   function textMatch(it, q) {
-    const hay = [it.title, it.text, it.description, it.summary, it.notes, it.domain, it.kind, it.type, (it.tags || []).join(' '), (it.colors || []).join(' ')].join(' ').toLowerCase();
+    const hay = [it.title, it.text, it.description, it.summary, it.notes, it.domain, it.siteName, it.brand, it.author, it.price, it.kind, it.type,(it.tags || []).join(' '), (it.colors || []).join(' ')].join(' ').toLowerCase();
     return q.split(/\s+/).filter(Boolean).every(tok => {
       if (tok[0] === '#') return (it.tags || []).some(t => t === tok.slice(1));
       const typeWord = { images: 'image', image: 'image', photos: 'image', notes: 'note', note: 'note', links: 'link', quotes: 'quote', quote: 'quote', videos: 'video', video: 'video' }[tok];
@@ -182,8 +183,13 @@
     // link
     const yt = youtubeId(it.url);
     const img = it.image || (yt ? 'https://i.ytimg.com/vi/' + yt + '/hqdefault.jpg' : '');
-    if (img) {
-      return '<div class="tile" data-id="' + it.id + '"><img src="' + esc(img) + '" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">' + (isVideo(it) ? '<span class="play">▶</span>' : '') +
+    const price = it.price ? '<span class="t-price">' + esc(it.price) + '</span>' : '';
+    if (it.imgBlob || img) {
+      // imgBlob: picture saved with the item (e.g. imported from mymind), kept in blob storage.
+      const imgTag = it.imgBlob
+        ? '<img data-blob="mind_img:' + it.id + ':thumb" alt="" style="aspect-ratio:' + (it.w && it.h ? it.w + '/' + it.h : '4/3') + '">'
+        : '<img src="' + esc(img) + '" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">';
+      return '<div class="tile" data-id="' + it.id + '">' + imgTag + price + (isVideo(it) ? '<span class="play">▶</span>' : '') +
         '<div class="t-body"><div class="t-title">' + esc(it.title || it.url) + '</div>' + site + '</div><div class="t-tags">' + tags + '</div>' + pending + '</div>';
     }
     return '<div class="tile textlink" data-id="' + it.id + '"><div class="t-big">' + esc(it.title || it.url) + '</div><div class="t-body" style="padding-top:6px">' + site + '</div><div class="t-tags">' + tags + '</div>' + pending + '</div>';
@@ -379,13 +385,15 @@
     else {
       const yt = youtubeId(it.url);
       preview = yt ? '<iframe style="width:100%;aspect-ratio:16/9;border:0" src="https://www.youtube-nocookie.com/embed/' + yt + '" allow="encrypted-media; picture-in-picture" allowfullscreen></iframe>'
-        : (it.image ? '<img src="' + esc(it.image) + '" alt="" referrerpolicy="no-referrer">' : '<div class="q" style="font-style:normal">' + esc(it.title || it.url) + '</div>');
+        : it.imgBlob ? '<img id="dImg" alt="">'
+        : (it.image ? '<img src="' + esc(it.image) + '" alt="" referrerpolicy="no-referrer">' :'<div class="q" style="font-style:normal">' + esc(it.title || it.url) + '</div>');
     }
     const spaces = d.spaces.filter(s => !s.query);
     const m = App.modal(
       '<div class="detail"><div class="d-preview">' + preview + '</div><div>' +
       '<input class="d-title" id="dTitle" value="' + esc(it.title || '') + '" placeholder="Untitled">' +
       (it.url ? '<div style="margin-top:6px"><a class="d-link" href="' + esc(it.url) + '" target="_blank" rel="noopener">' + esc(it.domain || it.url) + ' ↗</a></div>' : '') +
+      (it.price || it.brand || it.author ? '<div class="muted" style="margin-top:6px;font-size:13px">' + [it.price, it.brand, it.author && 'by ' + it.author].filter(Boolean).map(esc).join(' · ') + '</div>' : '') +
       (it.summary || it.description ? '<div class="d-sec"><h4>About</h4><div class="d-summary">' + esc(it.summary || it.description) + '</div></div>' : '') +
       '<div class="d-sec"><h4>Tags</h4><div class="tag-edit" id="dTags"></div></div>' +
       '<div class="d-sec"><h4>Spaces</h4><div class="space-list" id="dSpaces">' +
@@ -398,7 +406,7 @@
       '</div></div>', { wide: true, noFocus: true, onClose: commit });
 
     const q = s => m.el.querySelector(s);
-    if (it.type === 'image') {
+    if (it.type === 'image' || (it.imgBlob && q('#dImg'))) {
       const key = 'mind_img:' + it.id;
       store.getBlob(key + ':full').then(v => { if (v) q('#dImg').src = v; else if (blobCache[key + ':thumb']) q('#dImg').src = blobCache[key + ':thumb']; });
     }
@@ -443,7 +451,7 @@
       if (!confirm('Delete this from your mind?')) return;
       deleted = true;
       const dd = data(); dd.items = dd.items.filter(x => x.id !== id); save(dd);
-      if (it.type === 'image') { store.delBlob('mind_img:' + id + ':thumb'); store.delBlob('mind_img:' + id + ':full'); }
+      if (it.type === 'image' || it.imgBlob) { store.delBlob('mind_img:' + id + ':thumb'); store.delBlob('mind_img:' + id + ':full'); }
       m.close();
     };
   }
