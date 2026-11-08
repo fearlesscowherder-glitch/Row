@@ -60,7 +60,7 @@ Each page is one self-contained HTML file with inline CSS and JS. Most load `app
   - `data/` holds personal data.
   - `logs/` and `node_modules/` don't belong in git either.
   - All four are gitignored; `.env.example` is the template.
-- The server blocks dotfiles, `data/`, `logs/`, `tools/`, `api/` and package files from being served. Keep it that way when adding folders.
+- The server blocks dotfiles, `.md` files, `data/`, `logs/`, `tools/`, `api/` and package files from being served. Keep it that way when adding folders.
 - Keep pages dependency-free (no build step).
 - Check changes at phone width (about 390px) as well as desktop.
 - Commit messages end with a `Co-Authored-By` line.

@@ -35,7 +35,7 @@ const TYPES = {
   '.svg': 'image/svg+xml', '.ico': 'image/x-icon', '.webmanifest': 'application/manifest+json',
 };
 // Never serve secrets or server code as static files.
-const BLOCKED = /^\/(\..*|node_modules|data|logs|tools|api|server\.mjs|package(-lock)?\.json|supabase\.sql)(\/|$)/i;
+const BLOCKED = /^\/(\..*|node_modules|data|logs|tools|api|server\.mjs|package(-lock)?\.json|supabase\.sql|[^/]*\.md)(\/|$)/i;
 
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, 'http://localhost');
