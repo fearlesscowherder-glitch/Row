@@ -45,6 +45,9 @@
 .rules-row { display: grid; grid-template-columns: 1fr 1fr 30px; gap: 6px; margin-bottom: 6px; }
 .names-row { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; align-items: center; font-size: 12.5px; }
 .names-row .raw { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-secondary); }
+.add-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+@media (max-width: 480px) { .add-grid { grid-template-columns: 1fr; } }
+.kind-chips { display: flex; gap: 6px; flex-wrap: wrap; }
 .detail-desc { white-space: pre-wrap; font-size: 13px; line-height: 1.55; color: var(--text-secondary); background: rgba(0,0,0,0.25); border-radius: 10px; padding: 10px 12px; max-height: 240px; overflow: auto; }
 </style>
 </head>
@@ -61,6 +64,7 @@
       <button class="btn btn-sm" id="importBtn" title="Import a file from Schoology → Calendar → Export">Import</button>
       <input type="file" id="importFile" accept=".ics,text/calendar" hidden>
       <button class="btn btn-sm" id="refreshBtn">↻ Refresh</button>
+      <button class="btn btn-sm btn-primary" id="addBtn">+ Add</button>
     </div>
   </div>
 
@@ -256,13 +260,100 @@
     $('importBtn').disabled = false; $('importBtn').textContent = 'Import';
   };
   $('classesBtn').onclick = openClasses;
+  $('addBtn').onclick = () => openAdd();
   $('viewSeg').querySelectorAll('button').forEach(x => x.classList.toggle('on', x.dataset.v === view));
+
+  function knownClasses() {
+    const meta = school.meta();
+    return Array.from(new Set(school.list().map(x => x.cls)
+      .concat(Object.values(meta.classNames), meta.rules.map(r => r.cls))))
+      .filter(c => c && c !== 'Unsorted').sort();
+  }
+
+  // ---------- add / edit by hand ----------
+  const KINDS = ['Homework', 'Test', 'Quiz', 'Project', 'Essay', 'Reading', 'Lab', 'Other'];
+  const pad2 = n => String(n).padStart(2, '0');
+  function openAdd(item) {
+    item = item || {};
+    const editing = !!item.id;
+    const due = item.due ? App.parseWhen(item.due) : null;
+    const dateVal = App.dkey(due || App.addDays(new Date(), 1));
+    const timeVal = due && !item.allDay ? pad2(due.getHours()) + ':' + pad2(due.getMinutes()) : '';
+    let kind = item.kind || 'Homework';
+    const m = App.modal(
+      '<h2>' + (editing ? 'Edit assignment' : 'Add assignment') + '</h2>' +
+      '<label for="adTitle">What\'s due</label>' +
+      '<input id="adTitle" class="input" placeholder="e.g. Chapter 5 worksheet" value="' + esc(item.title || '') + '" autocomplete="off">' +
+      '<label>Kind of work</label>' +
+      '<div class="kind-chips" id="adKind">' + KINDS.map(k => '<button type="button" class="chip' + (k === kind ? ' on' : '') + '" data-k="' + k + '">' + k + '</button>').join('') + '</div>' +
+      '<label for="adCls">Class</label>' +
+      '<input id="adCls" class="input" list="adClsList" placeholder="Type or pick a class" value="' + esc(item.course || onlyClass || '') + '" autocomplete="off">' +
+      '<datalist id="adClsList">' + knownClasses().map(c => '<option value="' + esc(c) + '">').join('') + '</datalist>' +
+      '<div class="add-grid">' +
+        '<div><label for="adDate">Due date</label><input id="adDate" class="input" type="date" value="' + dateVal + '"></div>' +
+        '<div><label for="adTime">Time <span class="muted">(optional)</span></label><input id="adTime" class="input" type="time" value="' + timeVal + '"></div>' +
+      '</div>' +
+      '<label for="adNotes">Notes <span class="muted">(optional)</span></label>' +
+      '<textarea id="adNotes" class="input textarea" rows="3" placeholder="Pages, rubric, anything to remember">' + esc(item.description || '') + '</textarea>' +
+      '<div class="modal-actions"><button class="btn btn-ghost" data-x>Cancel</button><button class="btn btn-primary" data-save>' + (editing ? 'Save' : 'Add') + '</button></div>');
+    const q = sel => m.el.querySelector(sel);
+    q('#adKind').addEventListener('click', e => {
+      const b = e.target.closest('.chip'); if (!b) return;
+      kind = b.dataset.k;
+      m.el.querySelectorAll('#adKind .chip').forEach(x => x.classList.toggle('on', x === b));
+    });
+    q('[data-x]').onclick = () => m.close();
+    function save() {
+      const title = q('#adTitle').value.trim();
+      const date = q('#adDate').value;
+      const time = q('#adTime').value;
+      if (!title) { App.toast('Say what\'s due', true); q('#adTitle').focus(); return; }
+      if (!date) { App.toast('Pick a due date', true); q('#adDate').focus(); return; }
+      school.saveManual({
+        id: item.id || 'm_' + App.uid(),
+        title, kind,
+        course: q('#adCls').value.trim(),
+        due: time ? new Date(date + 'T' + time).toISOString() : date,
+        allDay: !time,
+        description: q('#adNotes').value.trim(),
+        createdAt: item.createdAt || Date.now(),
+      });
+      m.close(); render();
+      App.toast(editing ? 'Saved' : 'Added');
+    }
+    q('[data-save]').onclick = save;
+    q('#adTitle').addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+  }
+
+  function openManualDetail(a) {
+    const d = dueInfo(a);
+    const m = App.modal(
+      '<h2>' + esc(a.title) + '</h2>' +
+      '<div class="row wrap" style="gap:6px;margin-bottom:6px"><span class="badge ' + (d.cls || 'ok') + '">' + esc(d.label) + '</span>' +
+      (a.kind ? '<span class="badge">' + esc(a.kind) + '</span>' : '') +
+      '<span class="muted" style="font-size:12.5px">' + esc(a.dueDate.toLocaleString([], { dateStyle: 'full', timeStyle: a.allDay ? undefined : 'short' })) + '</span></div>' +
+      '<p class="row" style="margin:10px 0;gap:6px"><span class="dot" style="background:' + App.colorFor(a.cls) + '"></span>' + esc(a.cls) + '</p>' +
+      (a.description ? '<label>Notes</label><div class="detail-desc">' + esc(a.description) + '</div>' : '') +
+      '<div class="modal-actions" style="justify-content:space-between">' +
+        '<button class="btn btn-sm btn-ghost btn-danger" data-del>Delete</button>' +
+        '<button class="btn btn-sm btn-primary" data-edit>Edit</button>' +
+      '</div>', { noFocus: true });
+    m.el.querySelector('[data-edit]').onclick = () => {
+      m.close();
+      openAdd((school.meta().manual || []).find(x => x.id === a.id));
+    };
+    m.el.querySelector('[data-del]').onclick = () => {
+      if (!confirm('Delete "' + a.title + '"?')) return;
+      school.removeManual(a.id); m.close(); render(); App.toast('Deleted');
+    };
+  }
 
   // ---------- detail ----------
   function openDetail(id) {
     const a = school.list().find(x => x.id === id);
     if (!a) return;
-    const classes = Array.from(new Set(school.list().map(x => x.cls).concat(Object.values(school.meta().classNames)))).filter(c => c && c !== 'Unsorted').sort();
+    if (a.manual) return openManualDetail(a);
+    const classes = knownClasses();
     const d = dueInfo(a);
     const m = App.modal(
       '<h2>' + esc(a.title) + '</h2>' +

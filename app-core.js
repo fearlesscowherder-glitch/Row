@@ -366,12 +366,13 @@
   const FEED = 'school_feed'; // local-only cache of the last fetch
   const school = {
     meta() {
-      return Object.assign({ classNames: {}, rules: [], overrides: {}, done: {}, hidden: {}, order: [] }, store.get('school_meta', {}) || {});
+      return Object.assign({ classNames: {}, rules: [], overrides: {}, done: {}, hidden: {}, order: [], manual: [] }, store.get('school_meta', {}) || {});
     },
     saveMeta(m) { store.set('school_meta', m); },
     classOf(a, meta) {
       meta = meta || school.meta();
       if (meta.overrides[a.id]) return meta.overrides[a.id];
+      if (a.manual) return a.course || 'Unsorted';
       const hay = (a.title + ' ' + (a.course || '')).toLowerCase();
       for (const r of meta.rules) if (r.match && hay.indexOf(r.match.toLowerCase()) >= 0) return r.cls;
       if (a.course) return meta.classNames[a.course] || a.course;
@@ -381,10 +382,23 @@
     list() {
       const feed = school.cached();
       const meta = school.meta();
-      return ((feed && feed.assignments) || [])
+      return ((feed && feed.assignments) || []).concat(meta.manual || [])
         .filter(a => !meta.hidden[a.id])
         .map(a => Object.assign({}, a, { cls: school.classOf(a, meta), done: !!meta.done[a.id], dueDate: parseWhen(a.due) }))
         .filter(a => a.dueDate);
+    },
+    // Assignments the user typed in by hand: { id, title, due, allDay, kind, course, description, manual: true }
+    saveManual(item) {
+      const m = school.meta();
+      m.manual = (m.manual || []).filter(x => x.id !== item.id).concat([Object.assign({ manual: true }, item)]);
+      delete m.overrides[item.id];
+      school.saveMeta(m);
+    },
+    removeManual(id) {
+      const m = school.meta();
+      m.manual = (m.manual || []).filter(x => x.id !== id);
+      delete m.done[id]; delete m.overrides[id];
+      school.saveMeta(m);
     },
     toggleDone(id, done) {
       const m = school.meta();
