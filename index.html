@@ -231,7 +231,59 @@ body::after {
 }
 .day-ring-status { font-size: 14px; font-weight: 700; color: var(--text-primary); }
 .day-ring-remaining { font-family: var(--font-mono); font-size: 12px; color: var(--text-secondary); }
-.day-ring-hours { font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary); }
+.day-ring-hours {
+  align-self: flex-start;
+  font-family: var(--font-mono); font-size: 11px; color: var(--text-tertiary);
+  background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 999px; padding: 4px 10px; cursor: pointer;
+}
+.day-ring-hours:hover { color: var(--text-primary); border-color: rgba(255,255,255,0.2); }
+.day-ring-hours span { opacity: 0.6; margin-left: 2px; }
+.hours-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
+
+/* Dialogs and toasts from app-core.js (App.modal / App.toast). Copied from app.css and
+   scoped so they don't touch this page's own styles. */
+.modal-back {
+  position: fixed; inset: 0; z-index: 100;
+  background: rgba(0,0,0,0.6);
+  backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px);
+  display: grid; place-items: center; padding: 16px;
+}
+.modal {
+  width: 100%; max-width: 460px; max-height: calc(100vh - 32px); overflow: auto;
+  background: #111113; border: 1px solid rgba(255,255,255,0.08); border-radius: 18px;
+  padding: 20px; box-shadow: 0 30px 80px rgba(0,0,0,0.6); color: var(--text-secondary);
+}
+.modal h2 { margin: 0 0 14px; color: var(--text-primary); font-size: 18px; letter-spacing: -0.01em; }
+.modal p { color: var(--text-secondary); }
+.modal .muted { color: var(--text-tertiary); }
+.modal label { display: block; font-size: 12px; color: var(--text-tertiary); margin: 12px 0 5px; }
+.modal .input {
+  width: 100%; min-width: 0; padding: 10px 13px;
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
+  background: rgba(0,0,0,0.28); color: var(--text-primary);
+  font: inherit; font-size: 14px; outline: none; color-scheme: dark;
+}
+.modal .input:focus { border-color: rgba(255,255,255,0.28); }
+.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; flex-wrap: wrap; }
+.modal .btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 10px 16px; border: 1px solid rgba(255,255,255,0.08); border-radius: 12px;
+  background: rgba(255,255,255,0.04); color: var(--text-primary);
+  font: inherit; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.modal .btn-ghost { background: transparent; border-color: transparent; color: var(--text-secondary); }
+.modal .btn-primary {
+  border: 0; background: linear-gradient(180deg, #FFFFFF 0%, #E8E5DD 100%);
+  color: #0A0A0B; font-weight: 700;
+}
+.toast-wrap { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%); z-index: 200; display: grid; gap: 8px; pointer-events: none; }
+.toast {
+  padding: 10px 16px; border-radius: 12px; background: #1b1b1e;
+  border: 1px solid rgba(255,255,255,0.16); color: var(--text-primary); font-size: 13px;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+}
+.toast.err { border-color: rgba(255,107,107,0.5); }
 @media (max-width: 480px) {
   .day-ring { width: 144px; height: 144px; }
   .day-ring-percent { font-size: 32px; }
@@ -654,7 +706,7 @@ body::after {
     <div class="day-ring-text">
       <div class="day-ring-status"    id="dayRingStatus">Loading…</div>
       <div class="day-ring-remaining" id="dayRingRemaining">—</div>
-      <div class="day-ring-hours">8:00 AM – 12:00 AM</div>
+      <button type="button" class="day-ring-hours" id="dayRingHours" title="Change wake-up and sleep times">8:00 AM – 12:00 AM <span aria-hidden="true">✎</span></button>
     </div>
   </div>
 
@@ -734,8 +786,17 @@ body::after {
 (function () {
   'use strict';
 
-  const WAKE_HOUR  = 8;
-  const SLEEP_HOUR = 24;
+  // Wake-up / sleep times for the day ring, synced as 'day_hours' = { wake: 'HH:MM', sleep: 'HH:MM' }.
+  // A sleep time at or before the wake time means after midnight (e.g. wake 07:00, sleep 01:00).
+  const DEFAULT_HOURS = { wake: '08:00', sleep: '00:00' };
+  function toHours(hhmm) { const p = String(hhmm || '').split(':').map(Number); return (p[0] || 0) + (p[1] || 0) / 60; }
+  function dayHours() {
+    const h = Object.assign({}, DEFAULT_HOURS, App.store.get('day_hours', {}) || {});
+    const wake = toHours(h.wake);
+    let sleep = toHours(h.sleep);
+    if (sleep <= wake) sleep += 24;
+    return { wake, sleep, raw: h };
+  }
 
   // ---------- storage helpers ----------
   function storeGet(key) {
@@ -953,9 +1014,18 @@ body::after {
   fillEl.setAttribute('stroke-dasharray', C);
   fillEl.setAttribute('stroke-dashoffset', C);
 
+  function formatHour(h) {
+    const d = new Date(2000, 0, 1, Math.floor(h % 24), Math.round((h % 1) * 60));
+    return formatClock(d);
+  }
+
   function updateDayRing() {
     const now = new Date();
-    const hours = now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
+    const { wake: WAKE_HOUR, sleep: SLEEP_HOUR } = dayHours();
+    let hours = now.getHours() + now.getMinutes() / 60 + now.getSeconds() / 3600;
+    // Bedtime after midnight: the early hours still belong to yesterday's awake time.
+    if (SLEEP_HOUR > 24 && hours < SLEEP_HOUR - 24) hours += 24;
+    document.getElementById('dayRingHours').firstChild.nodeValue = formatHour(WAKE_HOUR) + ' – ' + formatHour(SLEEP_HOUR) + ' ';
     const percentEl   = document.getElementById('dayRingPercent');
     const phaseEl     = document.getElementById('dayRingPhase');
     const clockEl     = document.getElementById('dayRingClock');
@@ -1003,6 +1073,29 @@ body::after {
     const minsLeft = (SLEEP_HOUR - hours) * 60;
     remainingEl.textContent = formatRemaining(minsLeft) + ' awake time left';
   }
+
+  function openDayHours() {
+    const raw = dayHours().raw;
+    const m = App.modal(
+      '<h2>Your day</h2>' +
+      '<p class="muted" style="font-size:12.5px;margin:0 0 4px">The ring fills from when you wake up to when you go to sleep.</p>' +
+      '<div class="hours-grid">' +
+        '<div><label for="dhWake">Wake up</label><input id="dhWake" class="input" type="time" value="' + App.esc(raw.wake) + '"></div>' +
+        '<div><label for="dhSleep">Sleep</label><input id="dhSleep" class="input" type="time" value="' + App.esc(raw.sleep) + '"></div>' +
+      '</div>' +
+      '<div class="modal-actions"><button class="btn btn-ghost" data-x>Cancel</button><button class="btn btn-primary" data-save>Save</button></div>');
+    const q = s => m.el.querySelector(s);
+    q('[data-x]').onclick = () => m.close();
+    q('[data-save]').onclick = () => {
+      const wake = q('#dhWake').value, sleep = q('#dhSleep').value;
+      if (!wake || !sleep) { App.toast('Pick both times', true); return; }
+      if (wake === sleep) { App.toast('Wake and sleep can\'t be the same time', true); return; }
+      App.store.set('day_hours', { wake, sleep });
+      m.close(); updateDayRing();
+    };
+  }
+  document.getElementById('dayRingHours').addEventListener('click', openDayHours);
+  App.on('change', ev => { if (ev.key === 'day_hours') updateDayRing(); });
 
   // ---------- Row building ----------
   function makeInlineEdit(textEl, goals, idx, key, reload) {
@@ -1393,7 +1486,7 @@ body::after {
   App.on('change', ev => { if (ev.remote) renderAll(); });
   // Workout status comes from the Gym page's data, synced the same way.
   App.mirror('gym', k => /^po_coach_/.test(k) && k !== 'po_coach_photos', { onApply: renderGym });
-  App.store.watch(['school_meta', 'cal_events', 'email_events', 'email_hidden', 'lists']);
+  App.store.watch(['school_meta', 'cal_events', 'email_events', 'email_hidden', 'lists', 'day_hours']);
   renderAll();
   App.school.refresh(false).then(renderAll).catch(() => renderDue());
   App.gmail.maybeSync().then(renderCal);
