@@ -195,7 +195,7 @@
       setSync('busy');
       let res;
       try { res = await api('/api/state?keys=' + encodeURIComponent(keys.join(',')), { noPrompt: pwDeclined }); }
-      catch (e) { if (syncState === 'busy') setSync(e.offline ? syncState : 'off'); return; }
+      catch (e) { if (syncState === 'busy') setSync(e.offline ? syncState : 'off'); return false; }
       const rows = res.rows || {};
       keys.forEach(key => {
         const remote = rows[key];
@@ -212,6 +212,7 @@
         }
       });
       if (pending.size) await flush(); else setSync('ok');
+      return true; // false above means the server couldn't be reached
     },
     // Larger values (images): kept in IndexedDB locally, pushed to the server.
     async getBlob(key) {
@@ -379,13 +380,34 @@
       return 'Unsorted';
     },
     cached() { return lsGet(C + FEED); },
+    // Anything due more than KEEP_DAYS ago (done or not) is dropped everywhere.
+    KEEP_DAYS: 14,
+    cutoff() { return addDays(startOfDay(new Date()), -school.KEEP_DAYS); },
     list() {
       const feed = school.cached();
       const meta = school.meta();
+      const cutoff = school.cutoff();
       return ((feed && feed.assignments) || []).concat(meta.manual || [])
         .filter(a => !meta.hidden[a.id])
         .map(a => Object.assign({}, a, { cls: school.classOf(a, meta), done: !!meta.done[a.id], dueDate: parseWhen(a.due) }))
-        .filter(a => a.dueDate);
+        .filter(a => a.dueDate && a.dueDate >= cutoff);
+    },
+    // Deletes hand-added items past the cutoff and forgets saved state
+    // (done / class / hidden) for feed items past it. Call after school_meta is pulled.
+    prune() {
+      const m = school.meta();
+      const cutoff = school.cutoff();
+      const old = a => { const d = parseWhen(a.due); return d && d < cutoff; };
+      const oldIds = new Set((m.manual || []).filter(old).map(a => a.id));
+      const feed = school.cached();
+      ((feed && feed.assignments) || []).filter(old).forEach(a => oldIds.add(a.id));
+      if (!oldIds.size) return 0;
+      let changed = false;
+      const keep = (m.manual || []).filter(a => !oldIds.has(a.id));
+      if (keep.length !== (m.manual || []).length) { m.manual = keep; changed = true; }
+      ['done', 'overrides', 'hidden'].forEach(k => oldIds.forEach(id => { if (m[k] && id in m[k]) { delete m[k][id]; changed = true; } }));
+      if (changed) school.saveMeta(m);
+      return oldIds.size;
     },
     // Assignments the user typed in by hand: { id, title, due, allDay, kind, course, description, manual: true }
     saveManual(item) {
@@ -403,6 +425,11 @@
     toggleDone(id, done) {
       const m = school.meta();
       if (done) m.done[id] = Date.now(); else delete m.done[id];
+      school.saveMeta(m);
+    },
+    setDone(ids, done) {
+      const m = school.meta(); const now = Date.now();
+      ids.forEach(id => { if (done) m.done[id] = m.done[id] || now; else delete m.done[id]; });
       school.saveMeta(m);
     },
     async refresh(force) {

@@ -48,6 +48,22 @@
 .add-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0 10px; }
 @media (max-width: 480px) { .add-grid { grid-template-columns: 1fr; } }
 .kind-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.a-row.sel { background: var(--accent-soft); }
+.a-row.sel:hover { background: rgba(224,118,88,0.22); }
+.a-row .pick { accent-color: var(--accent); }
+#selectBtn.on { background: var(--accent-soft); border-color: rgba(224,118,88,0.45); color: var(--text-primary); }
+.selecting #out { padding-bottom: 80px; }
+.sel-bar {
+  position: fixed; left: 50%; transform: translateX(-50%); z-index: 50;
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center;
+  width: max-content; max-width: calc(100vw - 32px);
+  padding: 10px 12px; border-radius: 14px; border: 1px solid var(--line-strong);
+  background: rgba(20,20,22,0.96); box-shadow: 0 10px 40px rgba(0,0,0,0.55);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+}
+.sel-bar[hidden] { display: none; }
+.sel-bar .sel-count { font-size: 13px; color: var(--text-secondary); padding: 0 4px; white-space: nowrap; }
 .detail-desc { white-space: pre-wrap; font-size: 13px; line-height: 1.55; color: var(--text-secondary); background: rgba(0,0,0,0.25); border-radius: 10px; padding: 10px 12px; max-height: 240px; overflow: auto; }
 </style>
 </head>
@@ -81,10 +97,18 @@
       <button data-f="done">Done</button>
       <button data-f="all">All</button>
     </div>
+    <button class="btn btn-sm" id="selectBtn" title="Pick several assignments and check them off together">Select</button>
     <input class="input" id="search" type="search" placeholder="Search assignments…" autocomplete="off">
   </div>
   <div class="class-chips" id="chips"></div>
   <div id="out"></div>
+</div>
+<div class="sel-bar" id="selBar" hidden>
+  <span class="sel-count" id="selCount">0 selected</span>
+  <button class="btn btn-sm" id="selAll">Select all</button>
+  <button class="btn btn-sm btn-primary" id="selDone">✓ Mark done</button>
+  <button class="btn btn-sm" id="selUndone">Mark not done</button>
+  <button class="btn btn-sm btn-ghost" id="selCancel">Cancel</button>
 </div>
 
 <script>
@@ -97,6 +121,10 @@
   let onlyClass = null;
   let query = '';
   let lastError = null;
+  let selecting = false;
+  const selected = new Set();
+  let shownIds = [];
+  let metaReady = false;
 
   function localGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
   function localSet(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
@@ -125,8 +153,11 @@
 
   function rowHtml(a, showClass) {
     const d = dueInfo(a);
-    return '<li class="a-row' + (a.done ? ' done' : '') + '" data-id="' + esc(a.id) + '">' +
-      '<input type="checkbox" class="check" ' + (a.done ? 'checked' : '') + ' aria-label="Mark done">' +
+    const sel = selecting && selected.has(a.id);
+    return '<li class="a-row' + (a.done ? ' done' : '') + (sel ? ' sel' : '') + '" data-id="' + esc(a.id) + '">' +
+      (selecting
+        ? '<input type="checkbox" class="pick" ' + (sel ? 'checked' : '') + ' aria-label="Select">'
+        : '<input type="checkbox" class="check" ' + (a.done ? 'checked' : '') + ' aria-label="Mark done">') +
       '<div class="a-main"><div class="a-title">' + esc(a.title) + '</div>' +
       '<div class="a-meta">' +
         (showClass ? '<span class="dot" style="background:' + App.colorFor(a.cls) + '"></span>' + esc(a.cls) : '') +
@@ -139,6 +170,10 @@
     const feed = school.cached();
     const all = school.list();
     const shown = all.filter(matches).sort((a, b) => filter === 'done' ? b.dueDate - a.dueDate : a.dueDate - b.dueDate);
+    shownIds = shown.map(a => a.id);
+    // Only what's on screen can stay selected.
+    Array.from(selected).forEach(id => { if (!shownIds.includes(id)) selected.delete(id); });
+    updateSelBar();
 
     // subtitle
     if (feed && feed.fetchedAt) {
@@ -225,9 +260,50 @@
     const row = e.target.closest('.a-row');
     if (!row) return;
     const id = row.dataset.id;
+    if (selecting) {
+      if (selected.has(id)) selected.delete(id); else selected.add(id);
+      row.classList.toggle('sel', selected.has(id));
+      row.querySelector('.pick').checked = selected.has(id);
+      updateSelBar();
+      return;
+    }
     if (e.target.classList.contains('check')) { school.toggleDone(id, e.target.checked); render(); return; }
     openDetail(id);
   });
+
+  // ---------- select several ----------
+  function setSelecting(on) {
+    selecting = on; selected.clear();
+    document.body.classList.toggle('selecting', on);
+    $('selectBtn').classList.toggle('on', on);
+    $('selectBtn').textContent = on ? 'Selecting…' : 'Select';
+    render();
+  }
+  function updateSelBar() {
+    $('selBar').hidden = !selecting;
+    if (!selecting) return;
+    const n = selected.size;
+    $('selCount').textContent = n + ' selected';
+    $('selDone').disabled = $('selUndone').disabled = !n;
+    const allOn = shownIds.length > 0 && shownIds.every(id => selected.has(id));
+    $('selAll').textContent = allOn ? 'Select none' : 'Select all';
+  }
+  function markSelected(done) {
+    const ids = Array.from(selected); if (!ids.length) return;
+    school.setDone(ids, done);
+    setSelecting(false);
+    App.toast((done ? 'Checked off ' : 'Unchecked ') + ids.length + ' assignment' + (ids.length > 1 ? 's' : ''));
+  }
+  $('selectBtn').onclick = () => setSelecting(!selecting);
+  $('selCancel').onclick = () => setSelecting(false);
+  $('selDone').onclick = () => markSelected(true);
+  $('selUndone').onclick = () => markSelected(false);
+  $('selAll').onclick = () => {
+    const allOn = shownIds.every(id => selected.has(id));
+    selected.clear(); if (!allOn) shownIds.forEach(id => selected.add(id));
+    render();
+  };
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && selecting && !document.querySelector('.modal-back')) setSelecting(false); });
   $('chips').addEventListener('click', e => {
     const b = e.target.closest('.chip'); if (!b) return;
     onlyClass = b.dataset.c || null; render();
@@ -425,12 +501,17 @@
     try { await school.refresh(force); lastError = null; if (force) App.toast('Assignments updated'); }
     catch (e) { lastError = e; }
     $('refreshBtn').disabled = false;
+    if (metaReady) school.prune();
     render();
   }
 
   App.on('school', render);
   App.on('change', ev => { if (ev.remote && ev.key === 'school_meta') render(); });
-  store.watch(['school_meta']);
+  // Prune only once the synced copy is in, so an old local copy can't overwrite it.
+  store.watch(['school_meta']).then(ok => {
+    if (ok === false) return; // couldn't reach the server: don't touch saved data this visit
+    metaReady = true; if (school.prune()) render();
+  });
   render();
   refresh(false);
   setInterval(() => { if (!document.hidden) refresh(false); }, 10 * 60 * 1000);
